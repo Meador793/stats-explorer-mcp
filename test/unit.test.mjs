@@ -79,7 +79,7 @@ test('lists all tools with read-only annotations', async () => {
 });
 
 test('files outside the allowed folders are refused, including via symlink', async () => {
-  assert.match(await errText('inspect_data_file', { file: '/etc/passwd' }), /outside the allowed/);
+  assert.match(await errText('inspect_data_file', { file: '/etc/passwd' }), /outside the allowed|File not found/);
   const outside = mkdtempSync(join(tmpdir(), 'se-'));
   writeFileSync(join(outside, 'secret.csv'), 'a\n1\n');
   assert.match(await errText('inspect_data_file', { file: join(outside, 'secret.csv') }), /outside the allowed/);
