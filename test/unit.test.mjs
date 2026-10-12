@@ -1,4 +1,4 @@
-﻿import { test, before, after } from 'node:test';
+import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync, mkdtempSync, symlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -87,7 +87,9 @@ test('files outside the allowed folders are refused, including via symlink', asy
   assert.match(await errText('inspect_data_file', { file: '../../package.json' }), /tabular formats/);
   const link = join(FIXTURES, 'link.csv');
   rmSync(link, { force: true });
-  let linked = true; try { symlinkSync(join(outside, 'secret.csv'), link); } catch (e) { if (e.code === 'EPERM') linked = false; else throw e; }
+  // Windows only lets administrators (or Developer Mode) create symlinks; skip that one check otherwise.
+  let linked = true;
+  try { symlinkSync(join(outside, 'secret.csv'), link); } catch (e) { if (e.code === 'EPERM') linked = false; else throw e; }
   try {
     if (linked) assert.match(await errText('inspect_data_file', { file: 'link.csv' }), /outside the allowed/);
   } finally {

@@ -2,7 +2,7 @@
   "name": "stats-explorer-mcp",
   "displayName": "Stats Explorer MCP: Verified Statistics for AI Agents",
   "description": "14 statistics tools your AI assistant calls instead of guessing numbers: t-tests, ANOVA, chi-square, correlation and more, with effect sizes, confidence intervals and plain-English results. Runs locally.",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "publisher": "benmeador",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -82,9 +82,9 @@
         },
         "statsExplorer.maxFileMB": {
           "type": "number",
-          "default": 250,
+          "default": 2048,
           "minimum": 1,
-          "description": "Largest data file (in MB) the tools will load. Loading needs roughly 14 times the file size in free memory; CSV files can't exceed about 480 MB."
+          "description": "Largest data file (in MB) the tools will open. CSV files are streamed into compact storage; memory use is roughly 2 to 3 times the file size."
         },
         "statsExplorer.showAppLink": {
           "type": "boolean",

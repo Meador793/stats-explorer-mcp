@@ -5,14 +5,14 @@
 
 import { readFile, realpath, stat, access } from 'node:fs/promises';
 import { isAbsolute, resolve, relative, extname, dirname } from 'node:path';
-import { parseDelimitedText, readExcel, readParquet, isMissingValue } from './engine/dataImport.js';
+import { readExcel, readParquet, isMissingValue } from './engine/dataImport.js';
+import { readDelimitedFile, fromRows } from './table.js';
 
-// Files are read whole and parsed into memory (about 14 bytes of RAM per byte of CSV), so the limit is
-// configurable: STATS_EXPLORER_MAX_FILE_MB (default 250). Text files also have a hard ceiling because
-// Node cannot hold a string longer than about 512 MB; for bigger data, export a sample or use Parquet.
-export const DEFAULT_MAX_FILE_MB = 250;
-export const HARD_MAX_TEXT_MB = 480;
-export const HARD_MAX_BINARY_MB = 1900; // readFile() refuses files over 2 GiB
+// CSV and TSV files are streamed into compact column storage (src/table.js), so memory is roughly
+// 4 to 8 bytes per cell plus each distinct text value once. Excel and Parquet files are read whole.
+// STATS_EXPLORER_MAX_FILE_MB caps the size of file the tools will open (default below).
+export const DEFAULT_MAX_FILE_MB = 2048;
+export const HARD_MAX_BINARY_MB = 1900; // readFile() refuses files over 2 GiB (Excel, Parquet)
 const MB = 1024 * 1024;
 
 export function maxFileBytes(env = process.env) {
@@ -128,48 +128,53 @@ export async function resolveWritablePath(file, { overwrite = false } = {}) {
 
 const cache = new Map(); // path -> { mtimeMs, size, table }
 
-/** Loads a data file (cached until it changes). Returns { headers, rows, warnings, path, sheetName? }. */
+/**
+ * Loads a data file (cached until it changes). Returns a ColumnTable (src/table.js):
+ * { headers, rowCount, warnings, path, sheetName?, col(), value(), column(), rowsOf(), preview() }.
+ */
 export async function loadTable(file) {
   assertTabularSource(file);
   const path = await resolveAllowedPath(file);
   const st = await stat(path);
   if (!st.isFile()) throw new UserError(`${file} is not a file.`);
-  const ext0 = extname(path).toLowerCase();
-  const isText = !['.xlsx', '.xlsm', '.xls', '.parquet', '.pq'].includes(ext0);
+  const ext = extname(path).toLowerCase();
+  const binary = ['.xlsx', '.xlsm', '.xls', '.parquet', '.pq'].includes(ext);
   const sizeMB = Math.round(st.size / MB);
-  const hard = isText ? HARD_MAX_TEXT_MB : HARD_MAX_BINARY_MB;
-  if (st.size > hard * MB) {
-    throw new UserError(`${file} is ${sizeMB} MB, more than the ${hard} MB this server can load${isText ? ' from a text file' : ''}. Export a sample of the rows${isText ? ', or convert it to Parquet (smaller and faster to read)' : ''} and analyse that.`);
+  if (binary && st.size > HARD_MAX_BINARY_MB * MB) {
+    throw new UserError(`${file} is ${sizeMB} MB, more than the ${HARD_MAX_BINARY_MB} MB this server can load from an Excel or Parquet file. Export it to CSV (which is streamed, with no such ceiling) or analyse a sample.`);
   }
   if (st.size > maxFileBytes()) {
     const limit = Math.round(maxFileBytes() / MB);
-    throw new UserError(`${file} is ${sizeMB} MB, larger than the current ${limit} MB limit. Raise it with the STATS_EXPLORER_MAX_FILE_MB setting (in VS Code: Settings → Stats Explorer: Max File MB). Loading needs roughly 14× the file size in free memory, so for very large files analyse a sample instead.`);
+    throw new UserError(`${file} is ${sizeMB} MB, larger than the current ${limit} MB limit. Raise it with the STATS_EXPLORER_MAX_FILE_MB setting (in VS Code: Settings → Stats Explorer: Max File MB).`);
   }
   const hit = cache.get(path);
   if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.table;
-  const ext = extname(path).toLowerCase();
-  const buf = await readFile(path);
-  const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-  let parsed;
+  let table;
   try {
-    if (['.xlsx', '.xlsm', '.xls'].includes(ext)) parsed = readExcel(ab);
-    else if (['.parquet', '.pq'].includes(ext)) parsed = await readParquet(ab);
-    else {
-      const text = buf.toString('utf8');
-      // A .csv/.txt that actually holds JSON documents.
-      if (/^﻿?\s*[[{]/.test(text) && /^﻿?\s*[[{]\s*["{[]/.test(text)) throw notTabular(`"${file}" contains JSON, which`);
-      parsed = parseDelimitedText(text);
+    if (binary) {
+      const buf = await readFile(path);
+      const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+      const parsed = ext.startsWith('.xls') ? readExcel(ab) : await readParquet(ab);
+      table = fromRows(parsed);
+      if (parsed.sheetName) table.sheetName = parsed.sheetName;
+    } else {
+      table = await readDelimitedFile(path, {
+        // A .csv/.txt that actually holds JSON documents.
+        inspectStart: (text) => {
+          if (/^\uFEFF?\s*[[{]/.test(text) && /^\uFEFF?\s*[[{]\s*["{[]/.test(text)) throw notTabular(`"${file}" contains JSON, which`);
+        },
+      });
     }
   } catch (e) {
     if (e instanceof UserError) throw e;
-    if (e && (e.code === 'ERR_STRING_TOO_LONG' || e.code === 'ERR_FS_FILE_TOO_LARGE' || /array buffer allocation|out of memory/i.test(e.message))) {
-      throw new UserError(`${file} is too large to load in memory. Export a sample of the rows, or convert it to Parquet.`);
+    if (e && (e.code === 'ERR_FS_FILE_TOO_LARGE' || e instanceof RangeError || /array buffer allocation|out of memory/i.test(e.message))) {
+      throw new UserError(`${file} is too large to load in the memory available. Analyse a sample of the rows instead.`);
     }
     throw new UserError(`Could not read ${file}: ${e.message}`);
   }
-  const table = { ...parsed, path };
+  table.path = path;
   cache.set(path, { mtimeMs: st.mtimeMs, size: st.size, table });
-  if (cache.size > 20) cache.delete(cache.keys().next().value);
+  if (cache.size > 8) cache.delete(cache.keys().next().value);
   return table;
 }
 
@@ -195,16 +200,38 @@ export function requireColumn(table, name, role = 'column') {
   }
 }
 
-/** Numeric values of one column, skipping missing cells. Text in a numeric column is an error. */
-export function numericColumn(table, column, rows = table.rows) {
+/** Per distinct value of a dictionary column: its number, or null if missing, or NaN if text. */
+function dictNumbers(dict) {
+  return dict.map((v) => (v === null || isMissing(v) ? null : (toNumber(v) ?? NaN)));
+}
+
+/**
+ * Numeric values of one column, skipping missing cells. Text in a numeric column is an error.
+ * `rows` (row objects) restricts it to those rows; otherwise the whole column is read.
+ */
+export function numericColumn(table, column, rows) {
   requireColumn(table, column);
   const out = [];
   let bad = 0, firstBad;
-  for (const r of rows) {
-    const v = r[column];
-    if (isMissing(v)) continue;
-    const n = toNumber(v);
-    if (n === null) { bad++; firstBad ??= v; } else out.push(n);
+  if (rows) {
+    for (const r of rows) {
+      const v = r[column];
+      if (isMissing(v)) continue;
+      const n = toNumber(v);
+      if (n === null) { bad++; firstBad ??= v; } else out.push(n);
+    }
+  } else {
+    const c = table.col(column);
+    if (c.kind === 'num') {
+      for (const v of c.data) if (v === v) out.push(v);
+    } else {
+      const nums = dictNumbers(c.dict);
+      for (const code of c.codes) {
+        const n = nums[code];
+        if (n === null) continue;
+        if (n !== n) { bad++; firstBad ??= c.dict[code]; } else out.push(n);
+      }
+    }
   }
   if (bad) throw new UserError(`Column "${column}" has ${bad} non-numeric value(s), e.g. "${firstBad}". Clean the column or pick a numeric one.`);
   return out;
@@ -212,9 +239,15 @@ export function numericColumn(table, column, rows = table.rows) {
 
 /** True when every non-missing value is a number (and there is at least one). */
 export function isNumericColumn(table, column) {
+  const c = table.col(column);
+  if (!c) return false;
+  if (c.kind === 'num') { for (const v of c.data) if (v === v) return true; return false; }
   let seen = false;
-  for (const r of table.rows) {
-    const v = r[column];
+  const used = new Uint8Array(c.dict.length);
+  for (const code of c.codes) used[code] = 1;
+  for (let k = 1; k < c.dict.length; k++) {
+    if (!used[k]) continue;
+    const v = c.dict[k];
     if (isMissing(v)) continue;
     if (toNumber(v) === null) return false;
     seen = true;
@@ -222,15 +255,34 @@ export function isNumericColumn(table, column) {
   return seen;
 }
 
+/** Count of missing cells in a column. */
+export function missingCount(table, column) {
+  const c = table.col(column);
+  let m = 0;
+  if (c.kind === 'num') { for (const v of c.data) if (v !== v) m++; }
+  else { for (const code of c.codes) if (code === 0) m++; }
+  return m;
+}
+
+/**
+ * Calls fn(key, rowIndex) for every row where the column is not missing; key is the trimmed text
+ * form used for grouping (categoryKey). Computed once per distinct value for dictionary columns.
+ */
+export function forEachCategory(table, column, fn) {
+  const c = table.col(column);
+  if (c.kind === 'num') {
+    for (let i = 0; i < c.data.length; i++) { const v = c.data[i]; if (v === v) fn(String(v), i); }
+  } else {
+    const keys = c.dict.map((v) => (v === null || isMissing(v) ? null : categoryKey(v)));
+    for (let i = 0; i < c.codes.length; i++) { const k = keys[c.codes[i]]; if (k !== null) fn(k, i); }
+  }
+}
+
 export const categoryKey = (v) => (typeof v === 'string' ? v.trim() : String(v));
 
 /** Distinct non-missing values of a column, most frequent first. */
 export function categories(table, column) {
   const counts = new Map();
-  for (const r of table.rows) {
-    if (isMissing(r[column])) continue;
-    const k = categoryKey(r[column]);
-    counts.set(k, (counts.get(k) || 0) + 1);
-  }
+  forEachCategory(table, column, (k) => counts.set(k, (counts.get(k) || 0) + 1));
   return [...counts].sort((a, b) => b[1] - a[1]).map(([k]) => k);
 }

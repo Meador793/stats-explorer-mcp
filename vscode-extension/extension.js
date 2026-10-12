@@ -12,7 +12,7 @@ function settings() {
     showAppLink: cfg.get('showAppLink', true),
     guided: cfg.get('guidedWorkflow', true),
     confirm: cfg.get('confirmSelections', true),
-    maxFileMB: cfg.get('maxFileMB', 250),
+    maxFileMB: cfg.get('maxFileMB', 2048),
   };
 }
 
@@ -31,7 +31,7 @@ function serverDefinition(context) {
     STATS_EXPLORER_HIDE_LINK: showAppLink ? '0' : '1',
     STATS_EXPLORER_GUIDED: guided ? 'on' : 'off',
     STATS_EXPLORER_CONFIRM_SELECTIONS: confirm ? 'on' : 'off',
-    STATS_EXPLORER_MAX_FILE_MB: String(maxFileMB > 0 ? maxFileMB : 250),
+    STATS_EXPLORER_MAX_FILE_MB: String(maxFileMB > 0 ? maxFileMB : 2048),
   };
   if (folders.length) env.STATS_EXPLORER_ROOTS = folders.join(path.delimiter);
   const def = new vscode.McpStdioServerDefinition(

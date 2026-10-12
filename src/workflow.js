@@ -3,7 +3,7 @@
 // chart selection is confirmed by the user before it runs.
 import { z } from 'zod';
 import { IMPL, TOOLS, groupValues, pairedColumns, crosstab, rowsFor } from './tools.js';
-import { loadTable, numericColumn, requireColumn, isNumericColumn, categories, assertTabularSource, UserError } from './data.js';
+import { loadTable, numericColumn, requireColumn, isNumericColumn, categories, missingCount, assertTabularSource, UserError } from './data.js';
 import { confirmSelection } from './confirm.js';
 import { STEPS, MODES } from './session.js';
 import {
@@ -216,7 +216,7 @@ async function extractData(test, args) {
       if (args.type === 'goodness_of_fit') {
         if (table) {
           const counts = new Map();
-          for (const v of table.rows.map((r) => r[args.column])) if (v !== null && v !== undefined) counts.set(String(v), (counts.get(String(v)) || 0) + 1);
+          for (const v of table.column(args.column)) if (v !== null && v !== undefined) counts.set(String(v), (counts.get(String(v)) || 0) + 1);
           return { kind: 'gof', observed: [...counts.values()], categories: [...counts.keys()], expected: args.expected };
         }
         return { kind: 'gof', observed: args.observed || [], categories: args.categories, expected: args.expected };
@@ -319,7 +319,7 @@ async function checkAssumptions(a, ctx) {
   if (an.plan.file) {
     const table = await loadTable(an.plan.file);
     const used = Object.entries(args).filter(([k]) => NUMERIC_ROLES.includes(k) || CATEGORY_ROLES.includes(k)).map(([, v]) => v).concat(args.outcome_columns || []);
-    const miss = used.map((c) => [c, table.rows.filter((r) => r[c] === null || r[c] === undefined).length]).filter(([, m]) => m > 0);
+    const miss = used.filter((c) => table.headers.includes(c)).map((c) => [c, missingCount(table, c)]).filter(([, m]) => m > 0);
     add(miss.length ? 'info' : 'ok', 'Missing values', miss.length ? `${miss.map(([c, m]) => `${c}: ${m}`).join(', ')} missing; those rows are left out. If missingness is related to the outcome, results can be biased.` : 'No missing values in the columns used.');
   }
   const warnings = checks.filter((c) => c.status === 'warning').length;
@@ -492,7 +492,7 @@ async function baseRateCheck(a, ctx) {
     });
     if (!c.ok) return c.result;
     requireColumn(table, c.values.condition_column); requireColumn(table, c.values.test_column);
-    const rows = table.rows.filter((r) => [0, 1].includes(r[c.values.condition_column]) && [0, 1].includes(r[c.values.test_column]));
+    const rows = table.rowsOf([c.values.condition_column, c.values.test_column]).filter((r) => [0, 1].includes(r[c.values.condition_column]) && [0, 1].includes(r[c.values.test_column]));
     if (rows.length === 0) throw new UserError('No rows where both columns are 0 or 1.');
     const pos = rows.filter((r) => r[c.values.condition_column] === 1);
     const neg = rows.filter((r) => r[c.values.condition_column] === 0);

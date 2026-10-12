@@ -73,7 +73,7 @@ async function createVisualization(a, ctx) {
   } else {
     requireColumn(table, v.x_column);
     const xNum = isNumericColumn(table, v.x_column);
-    const rows = table.rows.filter((r) => !isMissing(r[v.x_column]) && (!v.y_column || !isMissing(r[v.y_column])));
+    const rows = table.rowsOf(v.y_column ? [v.x_column, v.y_column] : [v.x_column]).filter((r) => !isMissing(r[v.x_column]) && (!v.y_column || !isMissing(r[v.y_column])));
     if (v.y_column && !isNumericColumn(table, v.y_column)) throw new UserError(`${v.y_column} is not numeric.`);
     const groups = new Map();
     for (const r of rows) {

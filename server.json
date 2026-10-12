@@ -17,12 +17,12 @@
     "url": "https://github.com/meador793/stats-explorer-mcp",
     "source": "github"
   },
-  "version": "1.1.1",
+  "version": "1.2.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "stats-explorer-mcp",
-      "version": "1.1.1",
+      "version": "1.2.0",
       "transport": {
         "type": "stdio"
       },
@@ -36,11 +36,11 @@
         },
         {
           "name": "STATS_EXPLORER_MAX_FILE_MB",
-          "description": "Largest data file the tools will load, in MB. Default 250. Loading needs roughly 14x the file size in memory.",
+          "description": "Largest data file the tools will open, in MB. Default 2048. CSV files are streamed; memory is roughly 2-3x the file size.",
           "isRequired": false,
           "format": "number",
           "isSecret": false,
-          "default": "250"
+          "default": "2048"
         },
         {
           "name": "STATS_EXPLORER_GUIDED",

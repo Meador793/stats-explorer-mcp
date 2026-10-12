@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.0
+
+- Much faster and lighter on large files: a 1,000,000-row, 190 MB CSV loads in about 8 seconds using under 0.5 GB of memory (was 2.7 GB). Files up to 2 GB open by default; change it under **Settings → Stats Explorer: Max File MB**.
+
 ## 1.1.1
 
 - Data files up to 250 MB now load (was 50 MB). Change the limit under **Settings → Stats Explorer: Max File MB**. Large files need free memory of roughly 14 times their size.

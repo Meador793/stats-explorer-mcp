@@ -1,6 +1,6 @@
 {
   "name": "stats-explorer-mcp",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Verified statistics for AI agents with a guided workflow: hypothesis tests that follow six analyst steps, user-confirmed column and chart choices, charts and reports. CSV, TSV, Excel, Parquet. Runs locally.",
   "mcpName": "io.github.meador793/stats-explorer-mcp",
   "type": "module",

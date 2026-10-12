@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0
+
+- **Large files, efficiently.** CSV and TSV files are now streamed in 1 MB chunks into compact column storage (numbers packed 8 bytes each; repeated text stored once and referenced by a 4-byte code). A 190 MB, 1,000,000-row CSV now loads in about 8 seconds with under 0.5 GB of memory (before: 23 seconds and 2.7 GB), and the 480 MB CSV ceiling is gone. Grouping, crosstabs and the file inspector work on the compact columns directly.
+- Default file limit raised to 2 GB (`STATS_EXPLORER_MAX_FILE_MB`).
+- Results are unchanged: the streaming reader follows the app's import rules exactly, checked against the app's parser on 25 edge-case files and 300 random ones at chunk sizes down to 1 character, and against 1.1.1's output for every tool.
+
 ## 1.1.1
 
 - **Bigger data files.** The file limit is now 250 MB (was 50 MB) and can be changed with `STATS_EXPLORER_MAX_FILE_MB`. A 190 MB, 1,000,000-row CSV loads in about 25 seconds the first time and is then cached. Loading needs roughly 14 times the file size in free memory, and a CSV can't exceed about 480 MB, so larger files get a clear message suggesting a sample or Parquet.

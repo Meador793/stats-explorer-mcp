@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { computeTest } from './engine/hypothesisTests.js';
 import { proportionCI, tTestPower, cohensD } from './engine/statsUtils.js';
 import { linearRegression } from './engine/regression.js';
-import { loadTable, numericColumn, requireColumn, isMissing, toNumber, categoryKey, UserError, assertFlatRows } from './data.js';
+import { loadTable, numericColumn, requireColumn, isMissing, toNumber, categoryKey, forEachCategory, UserError, assertFlatRows } from './data.js';
 import {
   ALTERNATIVES, tPValue, zPValue, checkSample, checkVaries, checkLevel, magnitude, fmt, verdict, altPhrase,
   summarize, normalityWarnings, mean, variance, stdDev, inverseTCDF, inverseNormalCDF, formatPEq,
@@ -27,21 +27,26 @@ const join = (arr) => arr.join(',');
 export function groupValues(table, column, groupColumn) {
   requireColumn(table, column);
   requireColumn(table, groupColumn, 'group column');
+  // One pass over the rows: values per group, in order of first appearance.
   const map = new Map();
-  const rows = table.rows.filter((r) => !isMissing(r[groupColumn]) && !isMissing(r[column]));
-  for (const r of rows) {
-    const key = categoryKey(r[groupColumn]);
-    if (!map.has(key)) map.set(key, []);
-  }
-  for (const [key] of map) {
-    map.set(key, numericColumn(table, column, rows.filter((r) => categoryKey(r[groupColumn]) === key)));
-  }
+  const vc = table.col(column);
+  let bad = 0, firstBad;
+  forEachCategory(table, groupColumn, (key, i) => {
+    const v = vc.get(i);
+    if (isMissing(v)) return;
+    const n = toNumber(v);
+    if (n === null) { bad++; firstBad ??= v; return; }
+    let arr = map.get(key);
+    if (!arr) map.set(key, (arr = []));
+    arr.push(n);
+  });
+  if (bad) throw new UserError(`Column "${column}" has ${bad} non-numeric value(s), e.g. "${firstBad}". Clean the column or pick a numeric one.`);
   return map;
 }
 
 export function pairedColumns(table, a, b) {
   requireColumn(table, a); requireColumn(table, b);
-  const rows = table.rows.filter((r) => !isMissing(r[a]) && !isMissing(r[b]));
+  const rows = table.rowsOf([a, b]).filter((r) => !isMissing(r[a]) && !isMissing(r[b]));
   return [numericColumn(table, a, rows), numericColumn(table, b, rows)];
 }
 
@@ -306,12 +311,21 @@ async function anova(a) {
 
 export function crosstab(table, rowCol, colCol) {
   requireColumn(table, rowCol); requireColumn(table, colCol);
-  const rows = table.rows.filter((r) => !isMissing(r[rowCol]) && !isMissing(r[colCol]));
-  const rl = [...new Set(rows.map((r) => categoryKey(r[rowCol])))].sort();
-  const cl = [...new Set(rows.map((r) => categoryKey(r[colCol])))].sort();
+  // Row keys per row index (null where missing), then count the pairs.
+  const rk = new Array(table.rowCount).fill(null);
+  forEachCategory(table, rowCol, (k, i) => { rk[i] = k; });
+  const pairs = new Map();
+  forEachCategory(table, colCol, (k, i) => {
+    const r = rk[i];
+    if (r === null) return;
+    let row = pairs.get(r);
+    if (!row) pairs.set(r, (row = new Map()));
+    row.set(k, (row.get(k) || 0) + 1);
+  });
+  const rl = [...pairs.keys()].sort();
+  const cl = [...new Set([...pairs.values()].flatMap((row) => [...row.keys()]))].sort();
   if (rl.length > 100 || cl.length > 100) throw new UserError('Over 100 categories in a column; is it really categorical?');
-  const m = rl.map(() => cl.map(() => 0));
-  for (const r of rows) m[rl.indexOf(categoryKey(r[rowCol]))][cl.indexOf(categoryKey(r[colCol]))]++;
+  const m = rl.map((r) => cl.map((c) => pairs.get(r).get(c) || 0));
   return { m, rl, cl };
 }
 
@@ -324,7 +338,7 @@ async function chiSquare(a) {
       const table = await loadTable(a.file);
       requireColumn(table, a.column);
       const counts = new Map();
-      for (const r of table.rows) if (!isMissing(r[a.column])) { const k = categoryKey(r[a.column]); counts.set(k, (counts.get(k) || 0) + 1); }
+      forEachCategory(table, a.column, (k) => counts.set(k, (counts.get(k) || 0) + 1));
       cats = [...counts.keys()].sort();
       if (a.expected_by_category) {
         for (const k of Object.keys(a.expected_by_category)) if (!counts.has(k)) cats.push(k);
@@ -570,11 +584,14 @@ async function correlation(a) {
 // ------------------------------------------------------------------ ANCOVA / MANOVA
 
 export async function rowsFor(a, numericCols, groupCol) {
-  let rows;
-  if (a.file) rows = (await loadTable(a.file)).rows;
-  else if (Array.isArray(a.rows)) { assertFlatRows(a.rows); rows = a.rows; }
+  let rows, headers;
+  if (a.file) {
+    const table = await loadTable(a.file);
+    headers = new Set(table.headers);
+    for (const c of [groupCol, ...numericCols]) if (!headers.has(c)) throw new UserError(`No column named "${c}". Columns: ${table.headers.join(', ')}`);
+    rows = table.rowsOf([groupCol, ...numericCols]);
+  } else if (Array.isArray(a.rows)) { assertFlatRows(a.rows); rows = a.rows; headers = new Set(rows.flatMap((r) => Object.keys(r))); }
   else throw new UserError('Provide file or rows (an array of row objects).');
-  const headers = new Set(rows.flatMap((r) => Object.keys(r)));
   for (const c of [groupCol, ...numericCols]) if (!headers.has(c)) throw new UserError(`No column named "${c}". Columns: ${[...headers].join(', ')}`);
   const out = [];
   for (const r of rows) {
@@ -716,26 +733,63 @@ async function powerAnalysis(a) {
   return { data: { ...result, alpha: a.alpha, alternative: a.alternative, method: note }, summary: [`Power analysis (α = ${a.alpha}, ${a.alternative})`, line, `Note: ${note}`] };
 }
 
+/** Type, missing count, range, distinct values and most common values of one column. */
+function profileColumn(table, h) {
+  const c = table.col(h);
+  const col = { name: h };
+  let numeric, nonMissing, counts, mixed = false, nums;
+  if (c.kind === 'num') {
+    nums = [];
+    for (const v of c.data) if (v === v) nums.push(v);
+    nonMissing = nums.length;
+    numeric = nonMissing > 0;
+    const distinct = new Set(nums);
+    counts = distinct.size <= 10 ? new Map() : null;
+    if (counts) for (const v of nums) { const k = String(v); counts.set(k, (counts.get(k) || 0) + 1); }
+    col.distinctCount = distinct.size;
+  } else {
+    const perCode = new Uint32Array(c.dict.length);
+    for (const code of c.codes) perCode[code]++;
+    counts = new Map();
+    numeric = true; nonMissing = 0;
+    let anyNumber = false;
+    for (let k = 1; k < c.dict.length; k++) {
+      const v = c.dict[k];
+      if (!perCode[k] || isMissing(v)) continue;
+      nonMissing += perCode[k];
+      if (toNumber(v) === null) numeric = false; else anyNumber = true;
+      const key = categoryKey(v);
+      counts.set(key, (counts.get(key) || 0) + perCode[k]);
+    }
+    numeric = numeric && nonMissing > 0;
+    mixed = !numeric && anyNumber;
+    if (numeric) {
+      const vals = c.dict.map((v) => (v === null || isMissing(v) ? null : toNumber(v)));
+      nums = [];
+      for (const code of c.codes) { const n = vals[code]; if (n !== null) nums.push(n); }
+    }
+    col.distinctCount = counts.size;
+  }
+  Object.assign(col, { type: numeric ? 'numeric' : 'categorical', non_missing: nonMissing, missing: table.rowCount - nonMissing });
+  if (numeric) {
+    let lo = Infinity, hi = -Infinity;
+    for (const v of nums) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    Object.assign(col, { min: lo, max: hi, mean: mean(nums) });
+  }
+  col.distinct = col.distinctCount;
+  delete col.distinctCount;
+  if ((!numeric || col.distinct <= 10) && counts) col.top_values = [...counts].sort((p, q) => q[1] - p[1]).slice(0, 10).map(([value, count]) => ({ value, count }));
+  if (mixed) col.note = 'Mixes numbers and text; tools that need numbers will reject it.';
+  return col;
+}
+
 async function inspectFile(a) {
   const table = await loadTable(a.file);
-  const columns = table.headers.map((h) => {
-    const vals = table.rows.map((r) => r[h]);
-    const present = vals.filter((v) => !isMissing(v));
-    const nums = present.map(toNumber);
-    const numeric = present.length > 0 && nums.every((v) => v !== null);
-    const col = { name: h, type: numeric ? 'numeric' : 'categorical', non_missing: present.length, missing: vals.length - present.length };
-    if (numeric) Object.assign(col, { min: nums.reduce((m, v) => (v < m ? v : m), Infinity), max: nums.reduce((m, v) => (v > m ? v : m), -Infinity), mean: mean(nums) });
-    const counts = new Map();
-    for (const v of present) { const k = categoryKey(v); counts.set(k, (counts.get(k) || 0) + 1); }
-    col.distinct = counts.size;
-    if (!numeric || counts.size <= 10) col.top_values = [...counts].sort((p, q) => q[1] - p[1]).slice(0, 10).map(([value, count]) => ({ value, count }));
-    if (!numeric && present.some((v) => toNumber(v) !== null)) col.note = 'Mixes numbers and text; tools that need numbers will reject it.';
-    return col;
-  });
+  const columns = table.headers.map((h) => profileColumn(table, h));
   return {
-    data: { file: table.path, ...(table.sheetName ? { sheet: table.sheetName } : {}), rows: table.rows.length, columns, preview: table.rows.slice(0, 5), notes: table.warnings || [] },
+    data: { file: table.path, ...(table.sheetName ? { sheet: table.sheetName } : {}), rows: table.rowCount, columns, preview: table.preview(5), notes: table.warnings || [] },
     summary: [
-      `${table.path}${table.sheetName ? ` (sheet "${table.sheetName}")` : ''}: ${table.rows.length} rows, ${columns.length} columns`,
+      `${table.path}${table.sheetName ? ` (sheet "${table.sheetName}")` : ''}: ${table.rowCount} rows, ${columns.length} columns`,
       ...(table.warnings || []).map((w) => `  Note: ${w}`),
       ...columns.map((c) => `  ${c.name} (${c.type}${c.missing ? `, ${c.missing} missing` : ''}${c.type === 'numeric' ? `, ${fmt(c.min)} to ${fmt(c.max)}` : `, ${c.distinct} distinct: ${c.top_values.slice(0, 5).map((t) => (/[,"]/.test(t.value) ? JSON.stringify(t.value) : t.value)).join(', ')}${c.distinct > 5 ? ', …' : ''}`})`),
     ],
