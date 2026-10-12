@@ -1,0 +1,16 @@
+{
+ "n_control": 29,
+ "n_drugb": 26,
+ "welch_t": 0.12290357534959652,
+ "welch_p": 0.9029345512952318,
+ "welch_df": 32.75211942725956,
+ "slopes_F": 1.7682737525378942,
+ "slopes_p": 0.17739815334431466,
+ "slopes_df2": 78.0,
+ "power_two_sample_d05": 0.4567994629701448,
+ "n_needed_two_sample_d05": 63,
+ "power_one_sample_d03_n40": 0.47510087057263783,
+ "power_prop_h": 0.3447014091272146,
+ "power_corr_r03_n84": 0.7955174261087984,
+ "n_needed_corr_r03": 85
+}

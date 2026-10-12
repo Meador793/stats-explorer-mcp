@@ -1,0 +1,1450 @@
+{
+ "generated_with": {
+  "scipy": "1.18.1",
+  "statsmodels": "0.15.0",
+  "numpy": "2.5.3"
+ },
+ "cases": [
+  {
+   "name": "t one-sample two-sided",
+   "tool": "t_test",
+   "args": {
+    "type": "one_sample",
+    "sample1": [
+     57.8743,
+     54.5101,
+     44.7536,
+     43.7003,
+     57.0166,
+     52.1128,
+     60.1235,
+     46.1499,
+     49.6353,
+     54.1737,
+     55.5293,
+     53.8811,
+     52.2944,
+     48.7156,
+     61.6553,
+     66.3197,
+     44.683,
+     46.8594
+    ],
+    "mu0": 50,
+    "alternative": "two-sided"
+   },
+   "expect": {
+    "statistic.value": 1.8465085713532883,
+    "p_value": 0.08230260587754884,
+    "df": 17.0,
+    "effect_size.value": 0.43522624410766464,
+    "confidence_interval.lower": 49.60399244181332,
+    "confidence_interval.upper": 55.9502186692978
+   }
+  },
+  {
+   "name": "t one-sample greater",
+   "tool": "t_test",
+   "args": {
+    "type": "one_sample",
+    "sample1": [
+     57.8743,
+     54.5101,
+     44.7536,
+     43.7003,
+     57.0166,
+     52.1128,
+     60.1235,
+     46.1499,
+     49.6353,
+     54.1737,
+     55.5293,
+     53.8811,
+     52.2944,
+     48.7156,
+     61.6553,
+     66.3197,
+     44.683,
+     46.8594
+    ],
+    "mu0": 50,
+    "alternative": "greater"
+   },
+   "expect": {
+    "statistic.value": 1.8465085713532883,
+    "p_value": 0.04115130293877442,
+    "df": 17.0,
+    "effect_size.value": 0.43522624410766464
+   }
+  },
+  {
+   "name": "t one-sample less",
+   "tool": "t_test",
+   "args": {
+    "type": "one_sample",
+    "sample1": [
+     57.8743,
+     54.5101,
+     44.7536,
+     43.7003,
+     57.0166,
+     52.1128,
+     60.1235,
+     46.1499,
+     49.6353,
+     54.1737,
+     55.5293,
+     53.8811,
+     52.2944,
+     48.7156,
+     61.6553,
+     66.3197,
+     44.683,
+     46.8594
+    ],
+    "mu0": 50,
+    "alternative": "less"
+   },
+   "expect": {
+    "statistic.value": 1.8465085713532883,
+    "p_value": 0.9588486970612256,
+    "df": 17.0,
+    "effect_size.value": 0.43522624410766464
+   }
+  },
+  {
+   "name": "t paired two-sided",
+   "tool": "t_test",
+   "args": {
+    "type": "paired",
+    "sample1": [
+     95.2216,
+     97.5749,
+     105.6925,
+     112.2605,
+     86.0692,
+     98.8208,
+     108.5337,
+     81.3072,
+     110.9874,
+     95.407,
+     100.0426,
+     128.7023,
+     90.7406,
+     110.8201,
+     101.1028,
+     91.7455,
+     83.9271,
+     87.9067,
+     123.2726,
+     96.7082
+    ],
+    "sample2": [
+     99.9318,
+     105.6804,
+     106.1472,
+     113.6851,
+     87.2467,
+     109.2362,
+     106.9236,
+     89.8522,
+     116.9985,
+     99.8743,
+     102.6092,
+     140.8566,
+     92.7999,
+     114.7888,
+     104.1477,
+     100.3976,
+     86.6681,
+     94.0689,
+     144.1817,
+     109.7202
+    ],
+    "alternative": "two-sided"
+   },
+   "expect": {
+    "statistic.value": -5.016144942402718,
+    "p_value": 7.668570025760067e-05,
+    "df": 19.0,
+    "effect_size.value": -1.1216441076204242,
+    "confidence_interval.lower": -8.430655394719055,
+    "confidence_interval.upper": -3.466484605280947
+   }
+  },
+  {
+   "name": "t paired less",
+   "tool": "t_test",
+   "args": {
+    "type": "paired",
+    "sample1": [
+     95.2216,
+     97.5749,
+     105.6925,
+     112.2605,
+     86.0692,
+     98.8208,
+     108.5337,
+     81.3072,
+     110.9874,
+     95.407,
+     100.0426,
+     128.7023,
+     90.7406,
+     110.8201,
+     101.1028,
+     91.7455,
+     83.9271,
+     87.9067,
+     123.2726,
+     96.7082
+    ],
+    "sample2": [
+     99.9318,
+     105.6804,
+     106.1472,
+     113.6851,
+     87.2467,
+     109.2362,
+     106.9236,
+     89.8522,
+     116.9985,
+     99.8743,
+     102.6092,
+     140.8566,
+     92.7999,
+     114.7888,
+     104.1477,
+     100.3976,
+     86.6681,
+     94.0689,
+     144.1817,
+     109.7202
+    ],
+    "alternative": "less"
+   },
+   "expect": {
+    "statistic.value": -5.016144942402718,
+    "p_value": 3.8342850128800336e-05,
+    "df": 19.0,
+    "effect_size.value": -1.1216441076204242
+   }
+  },
+  {
+   "name": "t independent equal_var=True two-sided",
+   "tool": "t_test",
+   "args": {
+    "type": "independent",
+    "sample1": [
+     57.8743,
+     54.5101,
+     44.7536,
+     43.7003,
+     57.0166,
+     52.1128,
+     60.1235,
+     46.1499,
+     49.6353,
+     54.1737,
+     55.5293,
+     53.8811,
+     52.2944,
+     48.7156,
+     61.6553,
+     66.3197,
+     44.683,
+     46.8594
+    ],
+    "sample2": [
+     42.9608,
+     54.2331,
+     62.9704,
+     52.6615,
+     45.7241,
+     45.9683,
+     69.4926,
+     61.5997,
+     39.0566,
+     37.2726,
+     46.4077,
+     41.964,
+     43.3873,
+     60.3449,
+     69.013,
+     27.7335,
+     29.2409,
+     60.1534,
+     41.5858,
+     54.3599,
+     57.9251,
+     63.0314,
+     48.766,
+     58.7293,
+     58.2392
+    ],
+    "equal_variances": true,
+    "alternative": "two-sided",
+    "confidence": 0.9
+   },
+   "expect": {
+    "statistic.value": 0.6237779903962094,
+    "p_value": 0.536228678187628,
+    "df": 41.0,
+    "effect_size.value": 0.19282263696071428,
+    "confidence_interval.lower": -3.165291923997942,
+    "confidence_interval.upper": 6.893815035109044
+   }
+  },
+  {
+   "name": "t independent equal_var=True greater",
+   "tool": "t_test",
+   "args": {
+    "type": "independent",
+    "sample1": [
+     57.8743,
+     54.5101,
+     44.7536,
+     43.7003,
+     57.0166,
+     52.1128,
+     60.1235,
+     46.1499,
+     49.6353,
+     54.1737,
+     55.5293,
+     53.8811,
+     52.2944,
+     48.7156,
+     61.6553,
+     66.3197,
+     44.683,
+     46.8594
+    ],
+    "sample2": [
+     42.9608,
+     54.2331,
+     62.9704,
+     52.6615,
+     45.7241,
+     45.9683,
+     69.4926,
+     61.5997,
+     39.0566,
+     37.2726,
+     46.4077,
+     41.964,
+     43.3873,
+     60.3449,
+     69.013,
+     27.7335,
+     29.2409,
+     60.1534,
+     41.5858,
+     54.3599,
+     57.9251,
+     63.0314,
+     48.766,
+     58.7293,
+     58.2392
+    ],
+    "equal_variances": true,
+    "alternative": "greater",
+    "confidence": 0.9
+   },
+   "expect": {
+    "statistic.value": 0.6237779903962094,
+    "p_value": 0.268114339093814,
+    "df": 41.0,
+    "effect_size.value": 0.19282263696071428
+   }
+  },
+  {
+   "name": "t independent equal_var=False two-sided",
+   "tool": "t_test",
+   "args": {
+    "type": "independent",
+    "sample1": [
+     57.8743,
+     54.5101,
+     44.7536,
+     43.7003,
+     57.0166,
+     52.1128,
+     60.1235,
+     46.1499,
+     49.6353,
+     54.1737,
+     55.5293,
+     53.8811,
+     52.2944,
+     48.7156,
+     61.6553,
+     66.3197,
+     44.683,
+     46.8594
+    ],
+    "sample2": [
+     42.9608,
+     54.2331,
+     62.9704,
+     52.6615,
+     45.7241,
+     45.9683,
+     69.4926,
+     61.5997,
+     39.0566,
+     37.2726,
+     46.4077,
+     41.964,
+     43.3873,
+     60.3449,
+     69.013,
+     27.7335,
+     29.2409,
+     60.1534,
+     41.5858,
+     54.3599,
+     57.9251,
+     63.0314,
+     48.766,
+     58.7293,
+     58.2392
+    ],
+    "equal_variances": false,
+    "alternative": "two-sided",
+    "confidence": 0.9
+   },
+   "expect": {
+    "statistic.value": 0.6809207753987424,
+    "p_value": 0.49994939171784325,
+    "df": 38.955148628087755,
+    "effect_size.value": 0.19282263696071428,
+    "confidence_interval.lower": -2.748809467279565,
+    "confidence_interval.upper": 6.477332578390666
+   }
+  },
+  {
+   "name": "t independent equal_var=False greater",
+   "tool": "t_test",
+   "args": {
+    "type": "independent",
+    "sample1": [
+     57.8743,
+     54.5101,
+     44.7536,
+     43.7003,
+     57.0166,
+     52.1128,
+     60.1235,
+     46.1499,
+     49.6353,
+     54.1737,
+     55.5293,
+     53.8811,
+     52.2944,
+     48.7156,
+     61.6553,
+     66.3197,
+     44.683,
+     46.8594
+    ],
+    "sample2": [
+     42.9608,
+     54.2331,
+     62.9704,
+     52.6615,
+     45.7241,
+     45.9683,
+     69.4926,
+     61.5997,
+     39.0566,
+     37.2726,
+     46.4077,
+     41.964,
+     43.3873,
+     60.3449,
+     69.013,
+     27.7335,
+     29.2409,
+     60.1534,
+     41.5858,
+     54.3599,
+     57.9251,
+     63.0314,
+     48.766,
+     58.7293,
+     58.2392
+    ],
+    "equal_variances": false,
+    "alternative": "greater",
+    "confidence": 0.9
+   },
+   "expect": {
+    "statistic.value": 0.6809207753987424,
+    "p_value": 0.24997469585892163,
+    "df": 38.955148628087755,
+    "effect_size.value": 0.19282263696071428
+   }
+  },
+  {
+   "name": "t tiny p-value",
+   "tool": "t_test",
+   "args": {
+    "type": "independent",
+    "sample1": [
+     9.6499,
+     10.9334,
+     9.6211,
+     9.1264,
+     10.5343,
+     8.5811,
+     11.8874,
+     9.4577,
+     11.1633,
+     10.0887,
+     8.9183,
+     12.4837,
+     10.8068,
+     11.2236,
+     8.5266,
+     10.1106,
+     9.0776,
+     7.7051,
+     8.6181,
+     10.6289,
+     8.1827,
+     11.2861,
+     9.3298,
+     8.295,
+     10.6406,
+     10.5978,
+     10.204,
+     9.901,
+     10.703,
+     8.5906,
+     10.1899,
+     8.893,
+     10.9671,
+     9.6813,
+     9.5396,
+     9.3971,
+     11.2946,
+     10.9005,
+     8.9366,
+     9.1778,
+     10.3281,
+     10.201,
+     8.9459,
+     9.9918,
+     9.3926,
+     10.9188,
+     9.747,
+     11.2623,
+     9.3501,
+     10.0092,
+     10.7717,
+     9.5448,
+     9.9673,
+     10.6417,
+     11.0904,
+     10.2003,
+     11.6346,
+     12.6142,
+     10.2752,
+     9.9854
+    ],
+    "sample2": [
+     12.2133,
+     13.844,
+     12.4045,
+     12.4903,
+     12.3461,
+     13.5013,
+     12.7475,
+     13.4152,
+     13.8418,
+     12.9404,
+     12.7335,
+     11.3348,
+     13.4087,
+     12.425,
+     14.33,
+     13.2392,
+     12.9683,
+     13.0683,
+     12.0365,
+     13.6404,
+     13.2776,
+     13.9885,
+     15.3905,
+     11.9091,
+     12.6233,
+     11.2904,
+     13.2773,
+     14.1227,
+     14.2392,
+     12.8349,
+     12.4037,
+     10.5007,
+     12.9732,
+     12.9478,
+     12.6225,
+     13.9872,
+     12.0002,
+     15.124,
+     13.1887,
+     13.0867,
+     12.7244,
+     11.7421,
+     12.8775,
+     14.3687,
+     14.6091,
+     11.899,
+     12.2081,
+     12.9004,
+     12.9417,
+     14.6191,
+     11.8346,
+     13.7783,
+     13.315,
+     14.0142,
+     13.4564,
+     12.7717,
+     14.7789,
+     13.9751,
+     13.2677,
+     12.0201
+    ],
+    "equal_variances": true
+   },
+   "expect": {
+    "statistic.value": -16.432531397974373,
+    "p_value": 2.7564503432971545e-32
+   }
+  },
+  {
+   "name": "t welch from file",
+   "tool": "t_test",
+   "args": {
+    "type": "independent",
+    "file": "trial.csv",
+    "column": "score",
+    "group_column": "group",
+    "group1": "Control",
+    "group2": "Drug A"
+   },
+   "expect": {
+    "statistic.value": -0.46411680096445074,
+    "p_value": 0.6445048333379791,
+    "df": 51.904282312879246
+   }
+  },
+  {
+   "name": "anova from file",
+   "tool": "anova",
+   "args": {
+    "file": "trial.csv",
+    "column": "score",
+    "group_column": "group",
+    "pairwise": true
+   },
+   "expect": {
+    "statistic.value": 0.10268218414102136,
+    "p_value": 0.9025339684558783,
+    "effect_size.value": 0.0025928088320780625,
+    "pairwise_comparisons.comparisons.1.p_bonferroni": 1.0
+   }
+  },
+  {
+   "name": "anova inline 4 groups",
+   "tool": "anova",
+   "args": {
+    "groups": [
+     {
+      "name": "G0",
+      "values": [
+       12.2236,
+       10.7738,
+       7.5877,
+       13.9295,
+       4.8565,
+       12.2586,
+       11.8935,
+       10.7765
+      ]
+     },
+     {
+      "name": "G1",
+      "values": [
+       13.8594,
+       9.3995,
+       11.9603,
+       8.6885,
+       12.6765,
+       11.5136,
+       17.0418,
+       6.4772,
+       18.8485,
+       16.2074,
+       12.3802
+      ]
+     },
+     {
+      "name": "G2",
+      "values": [
+       10.9793,
+       10.3029,
+       8.3713,
+       9.3111,
+       14.2476,
+       13.424,
+       7.1303,
+       6.0519,
+       10.9707
+      ]
+     },
+     {
+      "name": "G3",
+      "values": [
+       16.0528,
+       15.9021,
+       14.8435,
+       16.6476,
+       14.7053,
+       10.3228,
+       17.5533
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "statistic.value": 4.414982409165045,
+    "p_value": 0.010698865288989598
+   }
+  },
+  {
+   "name": "chi2 gof proportions",
+   "tool": "chi_square",
+   "args": {
+    "type": "goodness_of_fit",
+    "observed": [
+     48,
+     35,
+     17
+    ],
+    "expected": [
+     0.5,
+     0.3,
+     0.2
+    ]
+   },
+   "expect": {
+    "statistic.value": 1.3633333333333333,
+    "p_value": 0.5057733339556132
+   }
+  },
+  {
+   "name": "chi2 gof uniform",
+   "tool": "chi_square",
+   "args": {
+    "type": "goodness_of_fit",
+    "observed": [
+     22,
+     30,
+     18,
+     30
+    ]
+   },
+   "expect": {
+    "statistic.value": 4.32,
+    "p_value": 0.22891886433610517
+   }
+  },
+  {
+   "name": "chi2 independence inline",
+   "tool": "chi_square",
+   "args": {
+    "type": "independence",
+    "table": [
+     [
+      30,
+      14,
+      6
+     ],
+     [
+      12,
+      25,
+      13
+     ]
+    ]
+   },
+   "expect": {
+    "statistic.value": 13.395797185270869,
+    "p_value": 0.0012335012697155087,
+    "df": 2.0,
+    "effect_size.value": 0.36600269377794026
+   }
+  },
+  {
+   "name": "chi2 independence from file",
+   "tool": "chi_square",
+   "args": {
+    "type": "independence",
+    "file": "trial.csv",
+    "row_column": "group",
+    "col_column": "improved"
+   },
+   "expect": {
+    "statistic.value": 2.0319444444444446,
+    "p_value": 0.3620502653556242,
+    "effect_size.value": 0.15553075199077132
+   }
+  },
+  {
+   "name": "fisher [[8, 2], [1, 5]] two-sided",
+   "tool": "fisher_exact",
+   "args": {
+    "table": [
+     [
+      8,
+      2
+     ],
+     [
+      1,
+      5
+     ]
+    ],
+    "alternative": "two-sided"
+   },
+   "expect": {
+    "p_value": 0.034965034965034975,
+    "effect_size.value": 20.0
+   }
+  },
+  {
+   "name": "fisher [[8, 2], [1, 5]] greater",
+   "tool": "fisher_exact",
+   "args": {
+    "table": [
+     [
+      8,
+      2
+     ],
+     [
+      1,
+      5
+     ]
+    ],
+    "alternative": "greater"
+   },
+   "expect": {
+    "p_value": 0.024475524475524483,
+    "effect_size.value": 20.0
+   }
+  },
+  {
+   "name": "fisher [[3, 9], [7, 4]] less",
+   "tool": "fisher_exact",
+   "args": {
+    "table": [
+     [
+      3,
+      9
+     ],
+     [
+      7,
+      4
+     ]
+    ],
+    "alternative": "less"
+   },
+   "expect": {
+    "p_value": 0.07356306366940368,
+    "effect_size.value": 0.19047619047619047
+   }
+  },
+  {
+   "name": "fisher [[12, 30], [25, 18]] two-sided",
+   "tool": "fisher_exact",
+   "args": {
+    "table": [
+     [
+      12,
+      30
+     ],
+     [
+      25,
+      18
+     ]
+    ],
+    "alternative": "two-sided"
+   },
+   "expect": {
+    "p_value": 0.008542952119004818,
+    "effect_size.value": 0.288
+   }
+  },
+  {
+   "name": "fisher from file",
+   "tool": "fisher_exact",
+   "args": {
+    "file": "trial.csv",
+    "row_column": "site",
+    "col_column": "improved"
+   },
+   "expect": {
+    "p_value": 0.2702228190736688
+   }
+  },
+  {
+   "name": "binomial two-sided",
+   "tool": "binomial_test",
+   "args": {
+    "successes": 37,
+    "trials": 60,
+    "p0": 0.5,
+    "alternative": "two-sided"
+   },
+   "expect": {
+    "p_value": 0.09246098107292373,
+    "confidence_interval.lower": 0.49017595824099924,
+    "confidence_interval.upper": 0.7291172762591798
+   }
+  },
+  {
+   "name": "binomial greater",
+   "tool": "binomial_test",
+   "args": {
+    "successes": 37,
+    "trials": 60,
+    "p0": 0.5,
+    "alternative": "greater"
+   },
+   "expect": {
+    "p_value": 0.04623049053646187,
+    "confidence_interval.lower": 0.49017595824099924,
+    "confidence_interval.upper": 0.7291172762591798
+   }
+  },
+  {
+   "name": "binomial less",
+   "tool": "binomial_test",
+   "args": {
+    "successes": 37,
+    "trials": 60,
+    "p0": 0.5,
+    "alternative": "less"
+   },
+   "expect": {
+    "p_value": 0.9740530520355393,
+    "confidence_interval.lower": 0.49017595824099924,
+    "confidence_interval.upper": 0.7291172762591798
+   }
+  },
+  {
+   "name": "binomial skewed p0",
+   "tool": "binomial_test",
+   "args": {
+    "successes": 3,
+    "trials": 40,
+    "p0": 0.2
+   },
+   "expect": {
+    "p_value": 0.04786946338839313
+   }
+  },
+  {
+   "name": "z proportion two-sided",
+   "tool": "z_test",
+   "args": {
+    "type": "proportion",
+    "successes": 130,
+    "n": 220,
+    "p0": 0.5,
+    "alternative": "two-sided"
+   },
+   "expect": {
+    "statistic.value": 2.696799449852969,
+    "p_value": 0.007000941989448619
+   }
+  },
+  {
+   "name": "z proportion greater",
+   "tool": "z_test",
+   "args": {
+    "type": "proportion",
+    "successes": 130,
+    "n": 220,
+    "p0": 0.5,
+    "alternative": "greater"
+   },
+   "expect": {
+    "statistic.value": 2.696799449852969,
+    "p_value": 0.0035004709947243093
+   }
+  },
+  {
+   "name": "z mean less",
+   "tool": "z_test",
+   "args": {
+    "type": "mean",
+    "sample_mean": 103.2,
+    "n": 64,
+    "population_sd": 15,
+    "mu0": 100,
+    "alternative": "less"
+   },
+   "expect": {
+    "statistic.value": 1.706666666666668,
+    "p_value": 0.9560579869047907,
+    "confidence_interval.lower": 99.5250675289874
+   }
+  },
+  {
+   "name": "pearson inline",
+   "tool": "correlation",
+   "args": {
+    "x": [
+     0.5966,
+     -1.0675,
+     0.1899,
+     -0.8053,
+     -0.204,
+     1.1888,
+     0.3147,
+     1.2847,
+     -0.5539,
+     1.2208,
+     -2.4477,
+     -0.6839,
+     -0.0782,
+     -1.5223,
+     0.3129,
+     -0.0583,
+     -2.0337,
+     0.3894,
+     0.4342,
+     -1.5774,
+     -1.1838,
+     0.6982,
+     0.6122,
+     -0.5123,
+     -1.9137,
+     0.4667,
+     -0.4298,
+     0.9539,
+     -1.6144,
+     -0.0068,
+     1.1552,
+     -0.2668,
+     -0.7331,
+     0.3206,
+     0.2158
+    ],
+    "y": [
+     0.3086,
+     -1.0889,
+     2.2158,
+     0.2751,
+     -1.2526,
+     2.0296,
+     0.5901,
+     0.1101,
+     -1.3588,
+     -1.5419,
+     -1.154,
+     0.2315,
+     -0.2731,
+     0.6303,
+     0.2499,
+     1.5067,
+     1.4148,
+     1.0244,
+     1.8107,
+     -0.971,
+     -0.5527,
+     1.7642,
+     1.0415,
+     1.4107,
+     0.0922,
+     0.2982,
+     0.3766,
+     -0.3482,
+     -1.5863,
+     1.2002,
+     0.3954,
+     0.7162,
+     -0.1348,
+     -0.3085,
+     0.4561
+    ]
+   },
+   "expect": {
+    "statistic.value": 0.3154379452649559,
+    "p_value": 0.06491777118131345,
+    "confidence_interval.lower": -0.019900513520929447,
+    "confidence_interval.upper": 0.5869817834251109,
+    "linear_fit.slope": 0.33137329163877904,
+    "linear_fit.intercept": 0.34313761788665287
+   }
+  },
+  {
+   "name": "pearson greater",
+   "tool": "correlation",
+   "args": {
+    "x": [
+     0.5966,
+     -1.0675,
+     0.1899,
+     -0.8053,
+     -0.204,
+     1.1888,
+     0.3147,
+     1.2847,
+     -0.5539,
+     1.2208,
+     -2.4477,
+     -0.6839,
+     -0.0782,
+     -1.5223,
+     0.3129,
+     -0.0583,
+     -2.0337,
+     0.3894,
+     0.4342,
+     -1.5774,
+     -1.1838,
+     0.6982,
+     0.6122,
+     -0.5123,
+     -1.9137,
+     0.4667,
+     -0.4298,
+     0.9539,
+     -1.6144,
+     -0.0068,
+     1.1552,
+     -0.2668,
+     -0.7331,
+     0.3206,
+     0.2158
+    ],
+    "y": [
+     0.3086,
+     -1.0889,
+     2.2158,
+     0.2751,
+     -1.2526,
+     2.0296,
+     0.5901,
+     0.1101,
+     -1.3588,
+     -1.5419,
+     -1.154,
+     0.2315,
+     -0.2731,
+     0.6303,
+     0.2499,
+     1.5067,
+     1.4148,
+     1.0244,
+     1.8107,
+     -0.971,
+     -0.5527,
+     1.7642,
+     1.0415,
+     1.4107,
+     0.0922,
+     0.2982,
+     0.3766,
+     -0.3482,
+     -1.5863,
+     1.2002,
+     0.3954,
+     0.7162,
+     -0.1348,
+     -0.3085,
+     0.4561
+    ],
+    "alternative": "greater"
+   },
+   "expect": {
+    "p_value": 0.032458885590656725
+   }
+  },
+  {
+   "name": "spearman with ties",
+   "tool": "correlation",
+   "args": {
+    "x": [
+     1,
+     2,
+     2,
+     3,
+     4,
+     4,
+     4,
+     5,
+     6,
+     7,
+     8,
+     8,
+     9,
+     10,
+     11,
+     12,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17
+    ],
+    "y": [
+     2,
+     1,
+     4,
+     3,
+     6,
+     5,
+     5,
+     8,
+     7,
+     9,
+     12,
+     10,
+     11,
+     14,
+     13,
+     13,
+     16,
+     15,
+     18,
+     17,
+     20,
+     19
+    ],
+    "method": "spearman"
+   },
+   "expect": {
+    "statistic.value": 0.9835843419166799,
+    "p_value": 2.3967049256600647e-16
+   }
+  },
+  {
+   "name": "pearson from file",
+   "tool": "correlation",
+   "args": {
+    "file": "trial.csv",
+    "x_column": "age",
+    "y_column": "bp"
+   },
+   "expect": {
+    "statistic.value": 0.5793647384949834,
+    "p_value": 7.744025583569016e-09
+   }
+  },
+  {
+   "name": "ancova from file",
+   "tool": "ancova",
+   "args": {
+    "file": "trial.csv",
+    "group_column": "group",
+    "outcome_column": "bp",
+    "covariate_column": "age"
+   },
+   "expect": {
+    "statistic.value": 0.8242750008340555,
+    "p_value": 0.44224244235688875,
+    "effect_size.value": 0.02019080561301371
+   }
+  },
+  {
+   "name": "manova from file",
+   "tool": "manova",
+   "args": {
+    "file": "trial.csv",
+    "group_column": "group",
+    "outcome_columns": [
+     "bp",
+     "chol"
+    ]
+   },
+   "expect": {
+    "wilks_lambda": 0.865809053262567,
+    "statistic.value": 2.9881672616954438,
+    "p_value": 0.02059913892631628
+   }
+  },
+  {
+   "name": "manova 3 outcomes",
+   "tool": "manova",
+   "args": {
+    "file": "trial.csv",
+    "group_column": "group",
+    "outcome_columns": [
+     "bp",
+     "chol",
+     "score"
+    ]
+   },
+   "expect": {
+    "wilks_lambda": 0.8623099925787132,
+    "statistic.value": 1.9733156627769333,
+    "p_value": 0.07270625214419878
+   }
+  },
+  {
+   "name": "describe inline",
+   "tool": "describe",
+   "args": {
+    "values": [
+     8.2648,
+     2.192,
+     7.425,
+     4.7945,
+     5.1389,
+     4.8425,
+     9.3436,
+     3.0491,
+     2.2627,
+     5.9329,
+     7.2208,
+     6.0289,
+     4.8874,
+     1.9573,
+     3.9269,
+     3.7771,
+     20.5495,
+     1.7547,
+     10.7459,
+     8.1623,
+     2.7079,
+     5.0946,
+     0.9391,
+     6.0905,
+     15.6311,
+     3.0043,
+     2.272,
+     14.497,
+     13.8038,
+     6.4855,
+     0.3826,
+     8.3059,
+     2.5412,
+     6.2196,
+     4.2341,
+     2.422,
+     2.7959,
+     5.7128,
+     3.9853,
+     2.9725
+    ],
+    "confidence": 0.99
+   },
+   "expect": {
+    "descriptives.0.mean": 5.8088625,
+    "descriptives.0.std_dev": 4.2890297833430635,
+    "descriptives.0.median": 4.86495,
+    "descriptives.0.q1": 2.7739000000000003,
+    "descriptives.0.q3": 7.27185,
+    "descriptives.0.skewness": 1.632554388687961,
+    "descriptives.0.excess_kurtosis": 2.9617780906430404,
+    "descriptives.0.mean_ci.lower": 3.972477219683381,
+    "descriptives.0.mean_ci.upper": 7.64524778031662
+   }
+  },
+  {
+   "name": "describe grouped from file",
+   "tool": "describe",
+   "args": {
+    "file": "trial.csv",
+    "column": "score",
+    "group_column": "group"
+   },
+   "expect": {
+    "descriptives.0.n": 29.0,
+    "descriptives.0.mean": 21.390655172413794,
+    "descriptives.0.std_dev": 3.3349240757673932
+   }
+  },
+  {
+   "name": "ci proportion wilson",
+   "tool": "confidence_interval",
+   "args": {
+    "type": "proportion",
+    "successes": 18,
+    "n": 50,
+    "confidence": 0.9
+   },
+   "expect": {
+    "confidence_interval.lower": 0.2581966745171427,
+    "confidence_interval.upper": 0.476176617503013
+   }
+  },
+  {
+   "name": "ci mean",
+   "tool": "confidence_interval",
+   "args": {
+    "type": "mean",
+    "values": [
+     57.8743,
+     54.5101,
+     44.7536,
+     43.7003,
+     57.0166,
+     52.1128,
+     60.1235,
+     46.1499,
+     49.6353,
+     54.1737,
+     55.5293,
+     53.8811,
+     52.2944,
+     48.7156,
+     61.6553,
+     66.3197,
+     44.683,
+     46.8594
+    ]
+   },
+   "expect": {
+    "confidence_interval.lower": 49.60399244181332,
+    "confidence_interval.upper": 55.9502186692978
+   }
+  },
+  {
+   "name": "power solve power",
+   "tool": "power_analysis",
+   "args": {
+    "effect_size": 0.5,
+    "n_per_group": 64
+   },
+   "expect": {
+    "power": 0.807430419432557
+   }
+  },
+  {
+   "name": "power solve n",
+   "tool": "power_analysis",
+   "args": {
+    "effect_size": 0.4,
+    "power": 0.8
+   },
+   "expect": {
+    "n_per_group": 99.0
+   }
+  },
+  {
+   "name": "power solve d",
+   "tool": "power_analysis",
+   "args": {
+    "n_per_group": 50,
+    "power": 0.9
+   },
+   "expect": {
+    "effect_size": 0.6483030775183971
+   }
+  }
+ ]
+}

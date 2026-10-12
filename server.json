@@ -1,0 +1,71 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.meador793/stats-explorer-mcp",
+  "title": "Stats Explorer",
+  "description": "Verified statistics for AI agents: guided hypothesis tests, confirmed choices, charts, reports.",
+  "websiteUrl": "https://github.com/meador793/stats-explorer-mcp#readme",
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/meador793/stats-explorer-mcp/main/vscode-extension/media/icon.png",
+      "mimeType": "image/png",
+      "sizes": [
+        "256x256"
+      ]
+    }
+  ],
+  "repository": {
+    "url": "https://github.com/meador793/stats-explorer-mcp",
+    "source": "github"
+  },
+  "version": "1.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "stats-explorer-mcp",
+      "version": "1.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "STATS_EXPLORER_ROOTS",
+          "description": "Folders the tools may read data files from and write reports to (separated by : on macOS/Linux, ; on Windows). Defaults to the client's workspace roots, or the current directory.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "STATS_EXPLORER_GUIDED",
+          "description": "on (default): classify each request and follow the six-step workflow for hypothesis tests. off: expose the individual test tools directly.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false,
+          "default": "on",
+          "choices": [
+            "on",
+            "off"
+          ]
+        },
+        {
+          "name": "STATS_EXPLORER_CONFIRM_SELECTIONS",
+          "description": "on (default): the user confirms every column, chart type and report section before anything runs. off: run with the AI's choices.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false,
+          "default": "on",
+          "choices": [
+            "on",
+            "off"
+          ]
+        },
+        {
+          "name": "STATS_EXPLORER_HIDE_LINK",
+          "description": "Set to 1 to remove the one-line Stats Explorer app link from results.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "name": "stats-explorer-mcp",
+  "version": "1.1.0",
+  "description": "Verified statistics for AI agents with a guided workflow: hypothesis tests that follow six analyst steps, user-confirmed column and chart choices, charts and reports. CSV, TSV, Excel, Parquet. Runs locally.",
+  "mcpName": "io.github.meador793/stats-explorer-mcp",
+  "type": "module",
+  "bin": {
+    "stats-explorer-mcp": "src/index.js"
+  },
+  "main": "src/server.js",
+  "exports": {
+    ".": "./src/server.js",
+    "./tools": "./src/tools.js"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test test/*.test.mjs",
+    "sync-engine": "node scripts/sync-engine.mjs",
+    "reference": "python3 test/reference/generate.py",
+    "inspect": "npx @modelcontextprotocol/inspector node src/index.js"
+  },
+  "keywords": [
+    "ai-agent",
+    "anova",
+    "chi-square",
+    "csv",
+    "data-analysis",
+    "elicitation",
+    "excel",
+    "hypothesis-testing",
+    "mcp",
+    "model-context-protocol",
+    "parquet",
+    "report",
+    "statistics",
+    "t-test",
+    "visualization"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/meador793/stats-explorer-mcp.git"
+  },
+  "homepage": "https://github.com/meador793/stats-explorer-mcp#readme",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.1",
+    "hyparquet": "^1.31.3",
+    "hyparquet-compressors": "^1.1.2",
+    "xlsx": "^0.18.5",
+    "zod": "^3.25.76"
+  }
+}

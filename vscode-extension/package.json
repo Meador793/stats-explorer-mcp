@@ -1,0 +1,104 @@
+{
+  "name": "stats-explorer-mcp",
+  "displayName": "Stats Explorer MCP: Verified Statistics for AI Agents",
+  "description": "14 statistics tools your AI assistant calls instead of guessing numbers: t-tests, ANOVA, chi-square, correlation and more, with effect sizes, confidence intervals and plain-English results. Runs locally.",
+  "version": "1.1.0",
+  "publisher": "benmeador",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#1e1b4b",
+    "theme": "dark"
+  },
+  "engines": {
+    "vscode": "^1.101.0"
+  },
+  "categories": [
+    "AI",
+    "Data Science",
+    "Chat"
+  ],
+  "keywords": [
+    "mcp",
+    "statistics",
+    "hypothesis testing",
+    "t-test",
+    "anova",
+    "copilot",
+    "data analysis",
+    "csv"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/meador793/stats-explorer-mcp"
+  },
+  "bugs": {
+    "url": "https://github.com/meador793/stats-explorer-mcp/issues"
+  },
+  "homepage": "https://github.com/meador793/stats-explorer-mcp#readme",
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "statsExplorer.mcp",
+        "label": "Stats Explorer"
+      }
+    ],
+    "commands": [
+      {
+        "command": "statsExplorer.copyMcpConfig",
+        "title": "Copy MCP Config for Other Editors",
+        "category": "Stats Explorer"
+      },
+      {
+        "command": "statsExplorer.openApp",
+        "title": "Open the Stats Explorer App",
+        "category": "Stats Explorer"
+      }
+    ],
+    "configuration": {
+      "title": "Stats Explorer",
+      "properties": {
+        "statsExplorer.dataFolders": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Extra folders the statistics tools may read data files from. Open workspace folders are always allowed."
+        },
+        "statsExplorer.guidedWorkflow": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Guide the AI through Stats Explorer's workflow: it first decides whether your request needs a hypothesis test or just exploration, and hypothesis tests follow the six *Bring it all together* steps in order. Turn off to give the AI the individual test tools directly."
+        },
+        "statsExplorer.confirmSelections": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Ask you to confirm every column, group, chart type and report section the AI picks (as dropdowns you can change) before anything runs."
+        },
+        "statsExplorer.showAppLink": {
+          "type": "boolean",
+          "default": true,
+          "description": "Add a one-line link to the Stats Explorer app at the end of each result."
+        }
+      }
+    }
+  },
+  "statsExplorer": {
+    "appUrl": "https://github.com/meador793/stats-explorer-mcp"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "package": "npm run build && vsce package --no-dependencies",
+    "test": "npm run build && node --test test/*.test.cjs"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.6.0",
+    "esbuild": "^0.25.0"
+  },
+  "pricing": "Free"
+}

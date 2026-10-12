@@ -1,0 +1,7 @@
+node_modules/
+vscode-extension/node_modules/
+vscode-extension/dist/
+vscode-extension/LICENSE
+*.vsix
+*.tgz
+.mcpregistry_*
