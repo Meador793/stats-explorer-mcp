@@ -29,7 +29,7 @@ class DictColumn {
 // keep every 1 MB chunk of the file alive. Copy them into standalone strings.
 const own = (s) => (s.length >= 13 ? Buffer.from(s, 'utf8').toString('utf8') : s);
 
-class ColumnBuilder {
+export class ColumnBuilder {
   constructor() {
     this.n = 0;
     this.num = new Float64Array(1024);
@@ -138,7 +138,7 @@ export function fromRows({ headers, rows, warnings = [] }) {
 const CHUNK = 1 << 20;
 
 /** Incremental version of engine splitDelimited(): same rules, fed one chunk at a time. */
-class Tokenizer {
+export class Tokenizer {
   constructor(delimiter, onRow) {
     this.d = delimiter;
     this.D = delimiter.charCodeAt(0);
@@ -149,6 +149,8 @@ class Tokenizer {
     this.wasQuoted = false;
     this.carry = '';
     this.first = true;
+    this.fed = 0;        // characters passed to feed() so far
+    this.rowEndChar = 0; // character offset just after the last completed row
   }
 
   #endField() {
@@ -158,6 +160,8 @@ class Tokenizer {
   }
 
   feed(chunk, final = false) {
+    const base = this.fed - this.carry.length; // character offset of text[0]
+    this.fed += chunk.length;
     const text = this.carry + chunk;
     this.carry = '';
     const n = text.length;
@@ -185,7 +189,7 @@ class Tokenizer {
           if (i + 1 >= n && !final) { this.carry = text.slice(i); return; }
           if (text[i + 1] === '\n') i++;
         }
-        this.#endField(); this.onRow(this.row); this.row = [];
+        this.#endField(); this.rowEndChar = base + i + 1; this.onRow(this.row); this.row = [];
       } else {
         // A run of ordinary characters, copied in one slice.
         let j = i + 1;
@@ -203,13 +207,13 @@ class Tokenizer {
   }
 }
 
-const unq = (c) => (typeof c === 'object' ? c.q : c);
+export const unq = (c) => (typeof c === 'object' ? c.q : c);
 
 /**
  * Fast path for the commonest cell, a plain decimal like 149.97 or -3: returns the number, or
  * undefined to let parseCell() decide (anything else, including codes with a leading zero like 007).
  */
-function plainNumber(s) {
+export function plainNumber(s) {
   const n = s.length;
   if (n === 0 || n > 15) return undefined;
   let i = 0, c = s.charCodeAt(0);
@@ -223,7 +227,7 @@ function plainNumber(s) {
   }
   return Number(s);
 }
-const isBlankRaw = (r) => r.every((c) => unq(c).trim() === '');
+export const isBlankRaw = (r) => r.every((c) => unq(c).trim() === '');
 
 /**
  * Streams a CSV/TSV file into a ColumnTable. Same results and messages as parseDelimitedText().

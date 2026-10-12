@@ -2,7 +2,7 @@
   "name": "stats-explorer-mcp",
   "displayName": "Stats Explorer MCP: Verified Statistics for AI Agents",
   "description": "14 statistics tools your AI assistant calls instead of guessing numbers: t-tests, ANOVA, chi-square, correlation and more, with effect sizes, confidence intervals and plain-English results. Runs locally.",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "publisher": "benmeador",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -80,11 +80,47 @@
           "default": true,
           "markdownDescription": "Ask you to confirm every column, group, chart type and report section the AI picks (as dropdowns you can change) before anything runs."
         },
+        "statsExplorer.largeFiles.streamAboveMB": {
+          "type": "number",
+          "default": 512,
+          "minimum": 0,
+          "markdownDescription": "CSV, TSV and Parquet files larger than this (in MB) are read in parallel streaming passes instead of being loaded into memory. Any size works, including terabytes; memory doesn't grow with the file (about 0.5 GB plus about 0.2 GB per parallel reader)."
+        },
+        "statsExplorer.largeFiles.parallelReaders": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "How many CPU cores read a large file at once. 0 = automatic (all cores but one, up to 16)."
+        },
+        "statsExplorer.largeFiles.askAboveMinutes": {
+          "type": "number",
+          "default": 2,
+          "minimum": 0,
+          "description": "If reading a whole file would take longer than this, you are asked first whether to read all of it (exact) or a quick sample."
+        },
+        "statsExplorer.largeFiles.samplePercent": {
+          "type": "number",
+          "default": 1,
+          "minimum": 0.01,
+          "maximum": 100,
+          "description": "Size of the quick sample, as a percentage of the file, when you choose a sample instead of a full read."
+        },
+        "statsExplorer.largeFiles.saveColumns": {
+          "type": "string",
+          "enum": ["ask", "always", "never"],
+          "default": "ask",
+          "markdownDescription": "After a full read of a large file, keep the columns it read on disk (8 bytes per number, 4 per text value) so follow-up questions on them take seconds. `ask` asks each time."
+        },
+        "statsExplorer.largeFiles.cacheFolder": {
+          "type": "string",
+          "default": "",
+          "description": "Where saved columns are kept. Empty = your system's temporary folder."
+        },
         "statsExplorer.maxFileMB": {
           "type": "number",
-          "default": 2048,
-          "minimum": 1,
-          "description": "Largest data file (in MB) the tools will open. CSV files are streamed into compact storage; memory use is roughly 2 to 3 times the file size."
+          "default": 0,
+          "minimum": 0,
+          "description": "Refuse data files larger than this (in MB). 0 = no limit."
         },
         "statsExplorer.showAppLink": {
           "type": "boolean",

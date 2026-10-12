@@ -4,7 +4,8 @@
 import { z } from 'zod';
 import { writeFile } from 'node:fs/promises';
 import { extname } from 'node:path';
-import { loadTable, numericColumn, isNumericColumn, isMissing, categoryKey, requireColumn, resolveWritablePath, UserError } from './data.js';
+import { openTable, numericColumn, isNumericColumn, isMissing, categoryKey, requireColumn, resolveWritablePath, UserError } from './data.js';
+import { bigChart } from './big/bigcharts.js';
 import { confirmSelection } from './confirm.js';
 import { groupValues, pairedColumns } from './tools.js';
 import { linearRegression } from './engine/regression.js';
@@ -39,7 +40,7 @@ async function createVisualization(a, ctx) {
   const { session } = ctx;
   session.requireAnalysis();
   if (!a.file) throw new UserError('create_visualization needs file (the data file) and the columns the user asked to see.');
-  const table = await loadTable(a.file);
+  const table = await openTable(a.file);
   const numeric = table.headers.filter((h) => isNumericColumn(table, h));
   const fields = [{ key: 'chart', title: 'Chart type', type: 'select', value: a.chart, options: CHART_TYPES }];
   for (const [role, title, numOnly, optional] of NEEDS[a.chart]) {
@@ -61,7 +62,8 @@ async function createVisualization(a, ctx) {
   }
   const t = v.title || undefined;
   let out;
-  if (chart === 'histogram') out = histogram(numericColumn(table, v.column), { title: t, column: v.column, bins: a.bins });
+  if (table.big) out = await bigChart(chart, v, table, a, t);
+  else if (chart === 'histogram') out = histogram(numericColumn(table, v.column), { title: t, column: v.column, bins: a.bins });
   else if (chart === 'box_plot') {
     const groups = v.group_column ? [...groupValues(table, v.column, v.group_column)].map(([name, values]) => ({ name, values })) : [{ name: v.column, values: numericColumn(table, v.column) }];
     if (groups.length > 20) throw new UserError(`${v.group_column} has ${groups.length} groups; a box plot is readable up to about 20.`);

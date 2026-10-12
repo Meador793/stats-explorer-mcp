@@ -3,7 +3,10 @@
 // chart selection is confirmed by the user before it runs.
 import { z } from 'zod';
 import { IMPL, TOOLS, groupValues, pairedColumns, crosstab, rowsFor } from './tools.js';
-import { loadTable, numericColumn, requireColumn, isNumericColumn, categories, missingCount, assertTabularSource, UserError } from './data.js';
+import { loadTable, openTable, largeFilePath, numericColumn, requireColumn, isNumericColumn, categories, missingCount, assertTabularSource, UserError } from './data.js';
+import * as BIG from './big/bigtools.js';
+import { accumulate } from './big/service.js';
+import { sSummarize, sMean, sSd, sVar, sQuantile, sOutliersZ, sOutliersIQR } from './big/sumstats.js';
 import { confirmSelection } from './confirm.js';
 import { STEPS, MODES } from './session.js';
 import {
@@ -135,7 +138,7 @@ async function stateHypotheses(a, ctx) {
   const [dh0, dh1] = defaultHypotheses(a.test, args);
   const fields = [];
   let table = null;
-  if (args.file) { table = await loadTable(args.file); fields.push(...selectionFields(table, args)); }
+  if (args.file) { table = await openTable(args.file); fields.push(...selectionFields(table, args)); }
   if (def.directional) fields.push({ key: 'alternative', title: 'Direction (alternative hypothesis)', type: 'select', value: a.alternative, options: ['two-sided', 'greater', 'less'], description: 'Fixed before seeing results. greater/less only if the question is about one direction.' });
   fields.push({ key: 'alpha', title: 'Significance level α', type: 'number', value: a.alpha, min: 0.0001, max: 0.5 });
   fields.push({ key: 'h0', title: 'Null hypothesis H₀', type: 'text', value: a.h0 || dh0 });
@@ -174,6 +177,7 @@ async function stateHypotheses(a, ctx) {
 
 /** The data the planned test will use, in a test-independent shape. */
 async function extractData(test, args) {
+  if (args.file) { const big = await largeFilePath(args.file); if (big) return extractBig(test, args, big); }
   const table = args.file ? await loadTable(args.file) : null;
   const S = (name, values) => ({ name, values });
   switch (test) {
@@ -233,6 +237,91 @@ async function extractData(test, args) {
   }
 }
 
+/** Columns the plan uses (for the missing-values check), in a fixed order. */
+function usedColumns(args, headers) {
+  return Object.entries(args).filter(([k]) => NUMERIC_ROLES.includes(k) || CATEGORY_ROLES.includes(k)).map(([, v]) => v).concat(args.outcome_columns || []).filter((c) => headers.includes(c));
+}
+
+const toUser = (e) => (e instanceof UserError ? e : new UserError(e?.message || String(e)));
+
+/**
+ * extractData() for a large (streamed) file. Samples carry their values when small enough (then
+ * every step is identical to the in-memory path) and otherwise a one-pass summary in `stats`.
+ * The missing-value counts for step 2 are read in the same pass.
+ */
+async function extractBig(test, args, path) {
+  const table = await openTable(path);
+  const missing = { type: 'missing', cols: usedColumns(args, table.headers) };
+  const one = async (spec) => { try { return (await accumulate(path, [spec], { prefetch: [missing] })).states[0]; } catch (e) { throw toUser(e); } };
+  const S = (name, st) => ({ name, values: st.exact || null, stats: st });
+  switch (test) {
+    case 't_test': {
+      if (args.type === 'one_sample') { const st = await one({ type: 'num', col: args.column }); BIG.checkBad(st); return { kind: 'numeric', samples: [S(args.column, st.s)] }; }
+      if (args.type === 'paired') {
+        const st = await one({ type: 'pair', x: args.column, y: args.column2 }); BIG.checkBad(st);
+        const exact = st.x.exact && st.y.exact;
+        return { kind: 'paired', samples: [S(args.column, exact ? st.x : { ...st.x, exact: null }), S(args.column2, exact ? st.y : { ...st.y, exact: null })], diff: st.d };
+      }
+      if (args.group_column) {
+        const st = await one({ type: 'grouped', col: args.column, by: args.group_column }); BIG.checkBad(st);
+        const g = st.groups;
+        const keys = [args.group1, args.group2].filter(Boolean).map(String);
+        const use = keys.length === 2 ? keys : [...g.keys()];
+        if (use.length !== 2) throw new UserError(`Pick two groups (group1, group2) from ${args.group_column}: ${[...g.keys()].join(', ')}`);
+        for (const k of use) if (!g.has(k)) throw new UserError(`Group "${k}" not found in ${args.group_column}. Groups: ${[...g.keys()].join(', ')}`);
+        return { kind: 'numeric', samples: use.map((k) => S(k, g.get(k))) };
+      }
+      const a = await one({ type: 'num', col: args.column }), b = await one({ type: 'num', col: args.column2 });
+      BIG.checkBad(a); BIG.checkBad(b);
+      return { kind: 'numeric', samples: [S(args.column, a.s), S(args.column2, b.s)] };
+    }
+    case 'anova': {
+      const st = await one({ type: 'grouped', col: args.column, by: args.group_column }); BIG.checkBad(st);
+      const keys = args.groups_to_include?.length ? args.groups_to_include.map(String) : [...st.groups.keys()];
+      for (const k of keys) if (!st.groups.has(k)) throw new UserError(`Group "${k}" not found in ${args.group_column}.`);
+      return { kind: 'numeric', samples: keys.map((k) => S(k, st.groups.get(k))) };
+    }
+    case 'ancova': case 'manova': {
+      const outs = test === 'ancova' ? [args.outcome_column] : args.outcome_columns;
+      const nums = test === 'ancova' ? [args.outcome_column, args.covariate_column] : outs;
+      for (const c of [args.group_column, ...nums]) if (!table.headers.includes(c)) throw new UserError(`No column named "${c}". Columns: ${table.headers.join(', ')}`);
+      const { st } = await BIG.groupedMultiOf(path, args.group_column, nums, [missing]).catch((e) => { throw toUser(e); });
+      const groups = [...st.groups.keys()];
+      if (st.rows) {
+        const rows = st.rows.map(([g, ...xs]) => Object.fromEntries([[args.group_column, g], ...nums.map((c, i) => [c, xs[i]])]));
+        return { kind: test, rows, groups, outs, groupCol: args.group_column, covariate: args.covariate_column };
+      }
+      return { kind: test, rows: null, multi: st, nums, groups, outs, groupCol: args.group_column, covariate: args.covariate_column };
+    }
+    case 'chi_square': case 'fisher_exact': {
+      if (args.type === 'goodness_of_fit') {
+        const { counts } = await BIG.countsOf(path, args.column, [missing]);
+        return { kind: 'gof', observed: [...counts.values()], categories: [...counts.keys()], expected: args.expected };
+      }
+      const { m, rl, cl } = await BIG.crosstabOf(path, args.row_column, args.col_column, [missing]);
+      return { kind: 'table', m, rl, cl };
+    }
+    case 'correlation': {
+      const st = await one({ type: 'pair', x: args.x_column, y: args.y_column }); BIG.checkBad(st);
+      const exact = st.x.exact && st.y.exact;
+      return { kind: 'pairs', samples: [S(args.x_column, exact ? st.x : { ...st.x, exact: null }), S(args.y_column, exact ? st.y : { ...st.y, exact: null })] };
+    }
+    default: return extractData(test, { ...args, file: undefined });
+  }
+}
+
+// Sample accessors that work for both value arrays and one-pass summaries.
+const nOf = (s) => (s.values ? s.values.length : s.stats.n);
+const varOf = (s) => (s.values ? variance(s.values) : sVar(s.stats));
+const summOf = (s) => (s.values ? summarize(s.values) : sSummarize(s.stats));
+const outZOf = (s) => (s.values ? outliersZ(s.values) : sOutliersZ(s.stats));
+
+/** Samples for each outcome within each group (ANCOVA / MANOVA), from rows or from summaries. */
+function groupSamples(d) {
+  if (d.rows) return d.outs.flatMap((o) => d.groups.map((g) => ({ name: `${o} in ${g}`, values: d.rows.filter((r) => r[d.groupCol] === g).map((r) => r[o]) })));
+  return d.outs.flatMap((o) => d.groups.map((g) => { const G = d.multi.groups.get(g); const S = G.each[d.nums.indexOf(o)]; return { name: `${o} in ${g}`, values: S.exact || null, stats: S }; }));
+}
+
 const outliersZ = (v) => { const m = mean(v), s = stdDev(v); return s > 0 ? v.filter((x) => Math.abs(x - m) > 3 * s).length : 0; };
 const outliersIQR = (v) => { const q1 = percentile(v, 0.25), q3 = percentile(v, 0.75), k = 1.5 * (q3 - q1); return v.filter((x) => x < q1 - k || x > q3 + k).length; };
 
@@ -246,27 +335,52 @@ async function checkAssumptions(a, ctx) {
   const checks = [];
   const add = (status, check, detail) => checks.push({ status, check, detail });
   const shape = (s) => {
-    const v = s.values;
-    if (v.length < 3 || variance(v) === 0) { add('warning', `Shape of ${s.name}`, `Only ${v.length} value(s) or no variation; the shape cannot be judged.`); return; }
-    const sum = summarize(v);
+    const n = nOf(s);
+    if (n < 3 || varOf(s) === 0) { add('warning', `Shape of ${s.name}`, `Only ${n} value(s) or no variation; the shape cannot be judged.`); return; }
+    const sum = summOf(s);
     const sk = sum.skewness, ek = sum.excess_kurtosis;
     const heavy = Math.abs(sk) > 1;
-    add(heavy && v.length < 30 ? 'warning' : heavy ? 'info' : 'ok', `Shape of ${s.name}`,
-      `n = ${v.length}; ${sum.shape ? sum.shape.label : 'shape not classified'} (skewness ${fmt(sk, 3)}${ek !== undefined ? `, excess kurtosis ${fmt(ek, 3)}` : ''}); mean ${fmt(sum.mean)} vs median ${fmt(sum.median)}.` +
-      (heavy ? (v.length < 30 ? ' Heavy skew with a small sample can break the normality assumption; the median describes the centre better than the mean.' : ' Skewed, but with n ≥ 30 the mean-based test is usually robust (Central Limit Theorem).') : ''));
+    add(heavy && n < 30 ? 'warning' : heavy ? 'info' : 'ok', `Shape of ${s.name}`,
+      `n = ${n}; ${sum.shape ? sum.shape.label : 'shape not classified'} (skewness ${fmt(sk, 3)}${ek !== undefined ? `, excess kurtosis ${fmt(ek, 3)}` : ''}); mean ${fmt(sum.mean)} vs median ${fmt(sum.median)}${sum.approximate ? ' (median estimated)' : ''}.` +
+      (heavy ? (n < 30 ? ' Heavy skew with a small sample can break the normality assumption; the median describes the centre better than the mean.' : ' Skewed, but with n ≥ 30 the mean-based test is usually robust (Central Limit Theorem).') : ''));
   };
   if (d.kind === 'numeric' || d.kind === 'paired' || d.kind === 'pairs') {
     for (const s of d.samples) shape(s);
-    if (d.kind === 'paired') shape({ name: 'the paired differences', values: d.samples[0].values.map((x, i) => x - d.samples[1].values[i]) });
+    if (d.kind === 'paired') shape(d.samples[0].values ? { name: 'the paired differences', values: d.samples[0].values.map((x, i) => x - d.samples[1].values[i]) } : { name: 'the paired differences', values: null, stats: d.diff });
     if (d.kind === 'numeric' && d.samples.length > 1) {
-      const ns = d.samples.map((s) => s.values.length);
-      if (Math.max(...ns) > 2 * Math.min(...ns)) add('info', 'Group sizes', `Unbalanced groups (${d.samples.map((s) => `${s.name}: ${s.values.length}`).join(', ')}). Fine for Welch's t-test; ANOVA is more sensitive to unequal variances when sizes differ.`);
-      else add('ok', 'Group sizes', d.samples.map((s) => `${s.name}: ${s.values.length}`).join(', '));
+      const ns = d.samples.map(nOf);
+      if (Math.max(...ns) > 2 * Math.min(...ns)) add('info', 'Group sizes', `Unbalanced groups (${d.samples.map((s) => `${s.name}: ${nOf(s)}`).join(', ')}). Fine for Welch's t-test; ANOVA is more sensitive to unequal variances when sizes differ.`);
+      else add('ok', 'Group sizes', d.samples.map((s) => `${s.name}: ${nOf(s)}`).join(', '));
     }
     if (d.kind === 'pairs') {
-      const out = d.samples.map((s) => `${s.name}: ${outliersZ(s.values)}`).join(', ');
-      const anyOut = d.samples.some((s) => outliersZ(s.values) > 0);
+      const out = d.samples.map((s) => `${s.name}: ${outZOf(s)}`).join(', ');
+      const anyOut = d.samples.some((s) => outZOf(s) > 0);
       add(anyOut ? 'warning' : 'ok', 'Outliers (beyond 3 SD)', `${out}.${anyOut && args.method !== 'spearman' ? ' Pearson\'s r is sensitive to outliers; Spearman (rank) correlation is the robust alternative.' : ''}`);
+    }
+  } else if ((d.kind === 'ancova' || d.kind === 'manova') && !d.rows) {
+    // Large file: per-group summaries.
+    for (const s of groupSamples(d)) shape(s);
+    if (d.kind === 'ancova') {
+      const y = args.outcome_column, x = d.covariate;
+      let sseSep = 0, sxxW = 0, sxyW = 0, syyW = 0, N = 0;
+      for (const g of d.groups) {
+        const G = d.multi.groups.get(g);
+        const syy = G.C[0][0], sxx = G.C[1][1], sxy = G.C[0][1];
+        sseSep += sxx > 0 ? syy - (sxy * sxy) / sxx : syy;
+        sxxW += sxx; sxyW += sxy; syyW += syy; N += G.n;
+      }
+      const sseCommon = syyW - (sxyW * sxyW) / sxxW;
+      const k = d.groups.length, df2 = N - 2 * k;
+      if (df2 > 0 && sseSep > 0) {
+        const F = ((sseCommon - sseSep) / (k - 1)) / (sseSep / df2);
+        const p = fPValue(F, k - 1, df2);
+        add(p < 0.05 ? 'warning' : 'ok', 'Equal covariate slopes (group × covariate interaction)',
+          `F(${k - 1}, ${df2}) = ${fmt(F)}, ${formatPEq(p)}. ${p < 0.05 ? `The effect of ${x} on ${y} differs between groups, so ANCOVA's adjusted comparison is not trustworthy. Consider analysing groups separately or modelling the interaction.` : 'No evidence the slopes differ; the ANCOVA assumption holds.'}`);
+        checks[checks.length - 1].stats = { F, df1: k - 1, df2, p_value: p };
+      }
+    } else {
+      const small = d.groups.filter((g) => d.multi.groups.get(g).n <= d.outs.length);
+      add(small.length ? 'warning' : 'ok', 'Group size vs number of outcomes', small.length ? `Groups ${small.join(', ')} have no more rows than outcomes (${d.outs.length}); MANOVA needs more.` : `Every group has more rows than outcomes (${d.outs.length}).`);
     }
   } else if (d.kind === 'ancova' || d.kind === 'manova') {
     for (const o of d.outs) for (const g of d.groups) shape({ name: `${o} in ${g}`, values: d.rows.filter((r) => r[d.groupCol] === g).map((r) => r[o]) });
@@ -317,9 +431,18 @@ async function checkAssumptions(a, ctx) {
   }
   add('question', 'Who is missing from the sample?', 'Ask the user how the data were collected. A biased sample (self-selection, survivors only, one site or time period) invalidates every number downstream, and no statistic can detect it.');
   if (an.plan.file) {
-    const table = await loadTable(an.plan.file);
-    const used = Object.entries(args).filter(([k]) => NUMERIC_ROLES.includes(k) || CATEGORY_ROLES.includes(k)).map(([, v]) => v).concat(args.outcome_columns || []);
-    const miss = used.filter((c) => table.headers.includes(c)).map((c) => [c, missingCount(table, c)]).filter(([, m]) => m > 0);
+    const big = await largeFilePath(an.plan.file);
+    let miss;
+    if (big) {
+      const table = await openTable(big);
+      const cols = usedColumns(args, table.headers);
+      const { states: [st] } = await accumulate(big, [{ type: 'missing', cols }]).catch((e) => { throw toUser(e); });
+      miss = cols.map((c, i) => [c, st.miss[i]]).filter(([, m]) => m > 0);
+    } else {
+      const table = await loadTable(an.plan.file);
+      const used = Object.entries(args).filter(([k]) => NUMERIC_ROLES.includes(k) || CATEGORY_ROLES.includes(k)).map(([, v]) => v).concat(args.outcome_columns || []);
+      miss = used.filter((c) => table.headers.includes(c)).map((c) => [c, missingCount(table, c)]).filter(([, m]) => m > 0);
+    }
     add(miss.length ? 'info' : 'ok', 'Missing values', miss.length ? `${miss.map(([c, m]) => `${c}: ${m}`).join(', ')} missing; those rows are left out. If missingness is related to the outcome, results can be biased.` : 'No missing values in the columns used.');
   }
   const warnings = checks.filter((c) => c.status === 'warning').length;
@@ -346,12 +469,16 @@ async function checkSpread(a, ctx) {
   const d = await extractData(test, args);
   let samples = [];
   if (['numeric', 'paired', 'pairs'].includes(d.kind)) samples = d.samples;
-  else if (d.kind === 'ancova' || d.kind === 'manova') samples = d.outs.flatMap((o) => d.groups.map((g) => ({ name: `${o} in ${g}`, values: d.rows.filter((r) => r[d.groupCol] === g).map((r) => r[o]) })));
-  const rows = samples.filter((s) => s.values.length >= 2).map((s) => {
+  else if (d.kind === 'ancova' || d.kind === 'manova') samples = groupSamples(d);
+  const rows = samples.filter((s) => nOf(s) >= 2).map((s) => {
+    if (!s.values) {
+      const S = s.stats, m = sMean(S), sd = sSd(S), q1 = sQuantile(S, 0.25), q3 = sQuantile(S, 0.75);
+      return { name: s.name, n: S.n, mean: m, std_dev: sd, iqr: q3 - q1, coefficient_of_variation: m !== 0 ? sd / Math.abs(m) : null, min: S.min, max: S.max, outliers_1_5_iqr: sOutliersIQR(S), approximate: ['iqr', 'outliers_1_5_iqr'] };
+    }
     const v = s.values, m = mean(v), sd = stdDev(v), q1 = percentile(v, 0.25), q3 = percentile(v, 0.75);
     return { name: s.name, n: v.length, mean: m, std_dev: sd, iqr: q3 - q1, coefficient_of_variation: m !== 0 ? sd / Math.abs(m) : null, min: v.reduce((x, y) => (y < x ? y : x), Infinity), max: v.reduce((x, y) => (y > x ? y : x), -Infinity), outliers_1_5_iqr: outliersIQR(v) };
   });
-  const lines = rows.map((r) => `  ${r.name}: SD ${fmt(r.std_dev)}, IQR ${fmt(r.iqr)}, range ${fmt(r.min)} to ${fmt(r.max)}${r.coefficient_of_variation !== null ? `, CV ${fmt(r.coefficient_of_variation * 100, 3)}%` : ''}${r.outliers_1_5_iqr ? `, ${r.outliers_1_5_iqr} outlier(s) beyond 1.5×IQR` : ''}`);
+  const lines = rows.map((r) => `  ${r.name}: SD ${fmt(r.std_dev)}, IQR ${fmt(r.iqr)}${r.approximate ? ' (estimated)' : ''}, range ${fmt(r.min)} to ${fmt(r.max)}${r.coefficient_of_variation !== null ? `, CV ${fmt(r.coefficient_of_variation * 100, 3)}%` : ''}${r.outliers_1_5_iqr ? `, ${r.outliers_1_5_iqr} outlier(s) beyond 1.5×IQR` : ''}`);
   const notes = [];
   if (rows.length >= 2 && (d.kind === 'numeric' || d.kind === 'ancova')) {
     const vars = rows.map((r) => r.std_dev ** 2).filter((v) => v > 0);
@@ -405,7 +532,7 @@ async function guidedPower(a, ctx) {
   let power, needed, perGroup = false, ncpUnit, basis = null;
   if (family === 'means') {
     if (test === 't_test' && args.type === 'independent' || test === 'anova') {
-      const ns = d.samples.map((s) => s.values.length).sort((x, y) => x - y);
+      const ns = d.samples.map(nOf).sort((x, y) => x - y);
       const [n1, n2] = test === 'anova' ? [ns[0], ns[1]] : ns;
       n = Math.round((2 * n1 * n2) / (n1 + n2)); perGroup = true;
       power = powerNormal(es / Math.sqrt(1 / n1 + 1 / n2), alpha, twoSided);
@@ -413,13 +540,13 @@ async function guidedPower(a, ctx) {
       ncpUnit = 'per group';
       if (test === 'anova') basis = 'based on the two smallest groups, as a pairwise comparison within the ANOVA';
     } else {
-      n = d.kind === 'summary' ? d.n : d.samples[0].values.length;
+      n = d.kind === 'summary' ? d.n : nOf(d.samples[0]);
       power = powerNormal(es * Math.sqrt(n), alpha, twoSided);
       needed = 2; while (powerNormal(es * Math.sqrt(needed), alpha, twoSided) < target && needed < 1e7) needed++;
       ncpUnit = args.type === 'paired' ? 'pairs' : 'observations';
     }
   } else if (family === 'r') {
-    n = d.samples[0].values.length;
+    n = nOf(d.samples[0]);
     const zr = Math.atanh(Math.abs(es));
     power = powerNormal(zr * Math.sqrt(n - 3), alpha, twoSided);
     needed = 4; while (powerNormal(zr * Math.sqrt(needed - 3), alpha, twoSided) < target && needed < 1e7) needed++;
@@ -484,7 +611,7 @@ async function baseRateCheck(a, ctx) {
   let prev = a.prevalence, sens = a.sensitivity, spec = a.specificity, source = 'given rates';
   if (a.file) {
     if (!a.condition_column || !a.test_column) throw new UserError('From a file, give condition_column (1 = really positive) and test_column (1 = flagged positive), both 0/1.');
-    const table = await loadTable(a.file);
+    const table = await openTable(a.file);
     const c = await confirmSelection(ctx, {
       kind: 'base_rate', intro: `Base-rate check on ${table.path}.`,
       fields: [columnField(table, 'condition_column', a.condition_column, true), columnField(table, 'test_column', a.test_column, true)].map((f) => ({ ...f, title: f.key === 'condition_column' ? 'Actual condition (0/1)' : 'Test / prediction (0/1)' })),
@@ -492,6 +619,15 @@ async function baseRateCheck(a, ctx) {
     });
     if (!c.ok) return c.result;
     requireColumn(table, c.values.condition_column); requireColumn(table, c.values.test_column);
+    if (table.big) {
+      const { c: k } = await BIG.baseRateCounts(table.path, c.values.condition_column, c.values.test_column).catch((e) => { throw toUser(e); });
+      const [tn, fp, fn, tp] = [k[0], k[1], k[2], k[3]], total = tn + fp + fn + tp;
+      if (total === 0) throw new UserError('No rows where both columns are 0 or 1.');
+      prev = (fn + tp) / total;
+      sens = fn + tp ? tp / (fn + tp) : NaN;
+      spec = tn + fp ? tn / (tn + fp) : NaN;
+      source = `${total} rows of ${c.values.condition_column} vs ${c.values.test_column}`;
+    } else {
     const rows = table.rowsOf([c.values.condition_column, c.values.test_column]).filter((r) => [0, 1].includes(r[c.values.condition_column]) && [0, 1].includes(r[c.values.test_column]));
     if (rows.length === 0) throw new UserError('No rows where both columns are 0 or 1.');
     const pos = rows.filter((r) => r[c.values.condition_column] === 1);
@@ -500,6 +636,7 @@ async function baseRateCheck(a, ctx) {
     sens = pos.length ? pos.filter((r) => r[c.values.test_column] === 1).length / pos.length : NaN;
     spec = neg.length ? neg.filter((r) => r[c.values.test_column] === 0).length / neg.length : NaN;
     source = `${rows.length} rows of ${c.values.condition_column} vs ${c.values.test_column}`;
+    }
   }
   for (const [n, v] of [['prevalence', prev], ['sensitivity', sens], ['specificity', spec]]) {
     if (!(v >= 0 && v <= 1)) throw new UserError(`${n} must be between 0 and 1 (got ${v}).`);
@@ -542,7 +679,7 @@ async function workflowStatus(a, { session }) {
 
 async function confirmColumns(ctx, kind, a, intro, extraFields = []) {
   if (!a.file) return { ok: true, values: {} };
-  const table = await loadTable(a.file);
+  const table = await openTable(a.file);
   const fields = [...selectionFields(table, a), ...extraFields];
   if (!fields.length) return { ok: true, values: {} };
   return confirmSelection(ctx, { kind: `${kind}:${table.path}`, intro: intro(table), fields, token: a.confirmation_token });
@@ -584,7 +721,7 @@ export function guidedTools({ create_visualization, build_report }) {
       inputSchema: {
         question: z.string().min(3).describe("The user's request, in their own words."),
         mode: z.enum(MODES),
-        file: z.string().optional().describe('The data file, if the user named one (CSV, TSV, Excel or Parquet).'),
+        file: z.string().optional().describe('The data file the user named or attached to the chat (CSV, TSV, Excel or Parquet): pass its path or name, never its contents. Large files are fine.'),
       },
       annotations: { title: 'Start an analysis', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
       run: startAnalysis,

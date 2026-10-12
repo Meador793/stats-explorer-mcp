@@ -71,9 +71,11 @@ const errText = async (name, args) => {
 
 test('lists all tools with read-only annotations', async () => {
   const { tools } = await client.listTools();
-  assert.equal(tools.length, 14);
+  const LARGE_FILE_TOOLS = ['job_status', 'cancel_job', 'large_file_plan', 'manage_cache'];
+  assert.equal(tools.filter((t) => !LARGE_FILE_TOOLS.includes(t.name)).length, 14);
+  assert.deepEqual(tools.filter((t) => LARGE_FILE_TOOLS.includes(t.name)).map((t) => t.name).sort(), [...LARGE_FILE_TOOLS].sort());
   for (const t of tools) {
-    assert.equal(t.annotations.readOnlyHint, true, t.name);
+    assert.equal(t.annotations.readOnlyHint, t.name !== 'manage_cache', t.name);
     assert.ok(t.description.length > 30, t.name);
   }
 });
@@ -165,4 +167,23 @@ test('result footer link can be turned off and on', async () => {
   const r2 = await c2.callTool({ name: 'describe', arguments: { values: [1, 2, 3] } });
   assert.match(r2.content[0].text, /https:\/\/example\.com\/app/);
   await c2.close();
+});
+
+test('attached-file references are understood: @name, #file:, quotes, file:// links, subfolders', async () => {
+  const { pathToFileURL } = await import('node:url');
+  const { mkdirSync, copyFileSync } = await import('node:fs');
+  const sub = join(FIXTURES, 'nested', 'deeper');
+  mkdirSync(sub, { recursive: true });
+  copyFileSync(join(FIXTURES, 'trial.csv'), join(sub, 'attached data.csv'));
+  try {
+    for (const ref of ['@trial.csv', '#file:trial.csv', '"trial.csv"', '`trial.csv`', pathToFileURL(join(FIXTURES, 'trial.csv')).href,
+      'attached data.csv', '@attached data.csv', pathToFileURL(join(sub, 'attached data.csv')).href, 'deeper/attached data.csv']) {
+      const r = await client.callTool({ name: 'inspect_data_file', arguments: { file: ref } });
+      assert.ok(!r.isError, `${ref}: ${r.content?.[0]?.text}`);
+      assert.match(r.content[0].text, /rows, 8 columns/, ref);
+    }
+    assert.match(await errText('inspect_data_file', { file: 'nowhere.csv' }), /not found/);
+  } finally {
+    rmSync(join(FIXTURES, 'nested'), { recursive: true, force: true });
+  }
 });

@@ -90,16 +90,21 @@ export function histogram(values, { title, column, bins }) {
   const w = (hi - lo) / k || 1;
   const counts = new Array(k).fill(0);
   for (const v of values) counts[Math.min(k - 1, Math.floor((v - lo) / w))]++;
+  return histogramFromBins({ lo, w, counts, mean: mean(values), median: median(values), n: values.length }, { title, column });
+}
+
+/** Draws a histogram from bin counts (bins of width w starting at lo). */
+export function histogramFromBins({ lo, w, counts, mean: m, median: md, n, note }, { title, column }) {
+  const k = counts.length, hi = lo + k * w;
   const edges = counts.map((_, i) => [lo + i * w, lo + (i + 1) * w]);
   const xs = niceTicks(lo, hi, 6), ys = niceTicks(0, maxOf(counts), 5);
   const x = linear(xs.lo, xs.hi, M.l, M.l + PW), y = linear(0, ys.hi, M.t + PH, M.t);
   const bw = Math.max(1, x(lo + w) - x(lo) - 2);
   const bars = counts.map((c, i) => `<path d="${barPath(x(edges[i][0]) + 1, bw, y(0), y(c))}" fill="${C.s1}"><title>${esc(`${fmt(edges[i][0], 4)} to ${fmt(edges[i][1], 4)}: ${c}`)}</title></path>`).join('');
-  const m = mean(values), md = median(values);
   const body = yAxis(ys.ticks, y) + xAxisNumeric(xs.ticks, x) + bars + refLine(x(m), '6 4') + refLine(x(md), '2 3') + refKey([[`mean ${fmt(m, 4)}`, '6 4'], [`median ${fmt(md, 4)}`, '2 3']]);
   return {
-    svg: frame(title || `Distribution of ${column}`, `n = ${values.length}, ${k} bins`, body, { xLabel: column, yLabel: 'Count' }),
-    data: { bins: counts.map((c, i) => ({ from: edges[i][0], to: edges[i][1], count: c })), mean: m, median: md, n: values.length },
+    svg: frame(title || `Distribution of ${column}`, `n = ${n}, ${k} bins${note ? `; ${note}` : ''}`, body, { xLabel: column, yLabel: 'Count' }),
+    data: { bins: counts.map((c, i) => ({ from: edges[i][0], to: edges[i][1], count: c })), mean: m, median: md, n },
   };
 }
 
@@ -112,10 +117,18 @@ function fiveNum(v) {
   };
 }
 
-export function boxPlot(groups, { title, column, groupColumn }) {
+export function boxPlot(groups, opts) {
   const stats = groups.map((g) => ({ name: g.name, ...fiveNum(g.values) }));
   const all = groups.flatMap((g) => g.values);
-  const ys = niceTicks(minOf(all), maxOf(all), 5);
+  return boxPlotFromStats(stats, minOf(all), maxOf(all), opts);
+}
+
+/**
+ * Draws box plots from five-number summaries: { name, n, min, q1, median, q3, max, mean, outliers }
+ * (min/max = whisker ends; outliers = values to draw; outlierCount if more exist than are drawn).
+ */
+export function boxPlotFromStats(stats, lo, hi, { title, column, groupColumn, note }) {
+  const ys = niceTicks(lo, hi, 5);
   const y = linear(ys.lo, ys.hi, M.t + PH, M.t);
   const band = PW / stats.length, bw = Math.min(56, band * 0.5);
   const cx = (i) => M.l + band * (i + 0.5);
@@ -133,12 +146,12 @@ ${s.outliers.map((o) => `<circle cx="${n2(c)}" cy="${n2(y(o))}" r="4" fill="${C.
   const legend = `<path d="M${M.l + PW - 120},${M.t - 14} l5,5 l-5,5 l-5,-5 Z" fill="${C.surface}" stroke="${C.text}" stroke-width="1.5"/><text x="${M.l + PW - 110}" y="${M.t - 5}" font-size="11" fill="${C.muted}">mean; bar = median</text>`;
   const body = yAxis(ys.ticks, y) + xAxisBands(stats.map((s) => `${s.name} (n=${s.n})`), cx) + boxes + legend;
   return {
-    svg: frame(title || (groupColumn ? `${column} by ${groupColumn}` : `Spread of ${column}`), 'Box = middle 50% (Q1 to Q3); whiskers to 1.5×IQR; dots = outliers', body, { xLabel: groupColumn || '', yLabel: column }),
-    data: { groups: stats.map(({ outliers, ...s }) => ({ ...s, outliers: outliers.length })) },
+    svg: frame(title || (groupColumn ? `${column} by ${groupColumn}` : `Spread of ${column}`), `Box = middle 50% (Q1 to Q3); whiskers to 1.5×IQR; dots = outliers${note ? `; ${note}` : ''}`, body, { xLabel: groupColumn || '', yLabel: column }),
+    data: { groups: stats.map(({ outliers, outlierCount, ...s }) => ({ ...s, outliers: outlierCount ?? outliers.length })) },
   };
 }
 
-export function scatter(xv, yv, { title, xName, yName, fit }) {
+export function scatter(xv, yv, { title, xName, yName, fit, n: nTotal, sampleNote }) {
   const xs = niceTicks(minOf(xv), maxOf(xv), 6), ys = niceTicks(minOf(yv), maxOf(yv), 5);
   const x = linear(xs.lo, xs.hi, M.l, M.l + PW), y = linear(ys.lo, ys.hi, M.t + PH, M.t);
   const stride = Math.ceil(xv.length / 2000);
@@ -147,8 +160,8 @@ export function scatter(xv, yv, { title, xName, yName, fit }) {
   const line = fit ? `<line x1="${n2(x(xs.lo))}" y1="${n2(y(fit.intercept + fit.slope * xs.lo))}" x2="${n2(x(xs.hi))}" y2="${n2(y(fit.intercept + fit.slope * xs.hi))}" stroke="${C.text}" stroke-width="2" stroke-linecap="round"/>` : '';
   const clip = `<clipPath id="plot"><rect x="${M.l}" y="${M.t}" width="${PW}" height="${PH}"/></clipPath>`;
   const body = clip + yAxis(ys.ticks, y) + xAxisNumeric(xs.ticks, x) + `<g clip-path="url(#plot)">${pts}${line}</g>`;
-  const sub = `n = ${xv.length}${stride > 1 ? `, showing every ${stride}th point` : ''}${fit ? `; line: ${fit.formula}, R² = ${fmt(fit.r2, 3)}` : ''}`;
-  return { svg: frame(title || `${yName} vs ${xName}`, sub, body, { xLabel: xName, yLabel: yName }), data: { n: xv.length, fit: fit && { slope: fit.slope, intercept: fit.intercept, r_squared: fit.r2 } } };
+  const sub = `n = ${nTotal ?? xv.length}${sampleNote ? `, ${sampleNote}` : stride > 1 ? `, showing every ${stride}th point` : ''}${fit ? `; line: ${fit.formula}, R² = ${fmt(fit.r2, 3)}` : ''}`;
+  return { svg: frame(title || `${yName} vs ${xName}`, sub, body, { xLabel: xName, yLabel: yName }), data: { n: nTotal ?? xv.length, fit: fit && { slope: fit.slope, intercept: fit.intercept, r_squared: fit.r2 } } };
 }
 
 export function bar(labels, values, { title, xName, yLabel, note, counts }) {

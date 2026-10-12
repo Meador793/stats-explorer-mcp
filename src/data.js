@@ -3,15 +3,16 @@
 // app read CSV, TSV, Excel and Parquet identically: missing cells are null, numbers are strict,
 // dates are YYYY-MM-DD text, duplicate column names are renamed.
 
-import { readFile, realpath, stat, access } from 'node:fs/promises';
-import { isAbsolute, resolve, relative, extname, dirname } from 'node:path';
+import { readFile, realpath, stat, access, readdir, open } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { isAbsolute, resolve, relative, extname, dirname, basename } from 'node:path';
 import { readExcel, readParquet, isMissingValue } from './engine/dataImport.js';
 import { readDelimitedFile, fromRows } from './table.js';
 
-// CSV and TSV files are streamed into compact column storage (src/table.js), so memory is roughly
-// 4 to 8 bytes per cell plus each distinct text value once. Excel and Parquet files are read whole.
-// STATS_EXPLORER_MAX_FILE_MB caps the size of file the tools will open (default below).
-export const DEFAULT_MAX_FILE_MB = 2048;
+// Files up to STATS_EXPLORER_STREAM_MB (default 512 MB) are loaded into compact column storage
+// (src/table.js). Larger CSV, TSV and Parquet files are streamed in parallel passes (src/big/), so
+// there is no size limit unless STATS_EXPLORER_MAX_FILE_MB sets one. Excel files are read whole.
+export const DEFAULT_MAX_FILE_MB = Infinity; // no limit: large CSV and Parquet files are streamed
 export const HARD_MAX_BINARY_MB = 1900; // readFile() refuses files over 2 GiB (Excel, Parquet)
 const MB = 1024 * 1024;
 
@@ -21,10 +22,8 @@ export function maxFileBytes(env = process.env) {
 }
 export const TABULAR_EXTENSIONS = ['.csv', '.tsv', '.txt', '.xlsx', '.xlsm', '.xls', '.parquet', '.pq'];
 
-export class UserError extends Error {}
-
-/** Raised for document / NoSQL data. Its message is the statement users should see. */
-export class NotTabularError extends UserError {}
+import { UserError, NotTabularError, LargeFileError } from './errors.js';
+export { UserError, NotTabularError, LargeFileError };
 
 export const TABULAR_STATEMENT =
   'Stats Explorer is built for tabular formats (CSV, TSV, Excel and Parquet) to run hypothesis tests or explore statistics.';
@@ -41,8 +40,26 @@ const NOSQL_EXTENSIONS = ['.json', '.jsonl', '.ndjson', '.bson', '.geojson'];
 const DATABASE_URI = /^(mongodb(\+srv)?|couchdb|couchbase|redis|rediss|cassandra|dynamodb|firestore|elasticsearch|neo4j|bolt|arangodb):\/\//i;
 
 /** Throws the tabular statement for NoSQL sources (files, connection strings) and other unsupported inputs. */
+/**
+ * Turns the ways chat clients refer to an attached or mentioned file into a plain path:
+ * "@data/sales.csv" (Claude Code), "#file:sales.csv" (VS Code), file:///D:/My%20Data/sales.csv URIs,
+ * and names wrapped in quotes or backticks.
+ */
+export function normalizeFileRef(file) {
+  let f = String(file ?? '').trim();
+  for (let k = 0; k < 3; k++) {
+    const m = /^(["'`])(.*)\1$/s.exec(f);
+    if (m) f = m[2].trim();
+  }
+  f = f.replace(/^#file:/i, '').replace(/^@(?=[^\s@])/, '');
+  if (/^file:\/\//i.test(f)) {
+    try { f = fileURLToPath(f); } catch { f = decodeURIComponent(f.replace(/^file:\/\/(localhost)?/i, '')); }
+  }
+  return f;
+}
+
 export function assertTabularSource(file) {
-  const f = String(file || '').trim();
+  const f = normalizeFileRef(file);
   if (DATABASE_URI.test(f)) {
     throw notTabular(`The ${f.split('://')[0]} connection you referenced`, 'a NoSQL database (document, key-value or graph data)');
   }
@@ -92,17 +109,51 @@ async function insideRoots(real) {
 function candidatePath(file) {
   if (typeof file !== 'string' || !file.trim()) throw new UserError('file must be a non-empty path');
   if (allowedRoots.length === 0) throw new UserError('No data folders are allowed. Set STATS_EXPLORER_ROOTS or open a workspace folder.');
-  const f = file.replace(/^file:\/\//i, '');
+  const f = normalizeFileRef(file);
   return isAbsolute(f) ? resolve(f) : resolve(allowedRoots[0], f);
 }
 
+const SKIP_DIRS = new Set(['node_modules', '.git', '.venv', 'venv', '__pycache__', 'dist', 'build', '.next', '.cache']);
+
+/** Finds files with this name anywhere in the allowed folders (bounded search). */
+async function findByName(name) {
+  const found = [];
+  let visited = 0;
+  const walk = async (dir, depth) => {
+    if (depth > 8 || visited > 50000 || found.length > 10) return;
+    let entries;
+    try { entries = await readdir(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      visited++;
+      if (e.isFile() && e.name.toLowerCase() === name.toLowerCase()) found.push(resolve(dir, e.name));
+      else if (e.isDirectory() && !SKIP_DIRS.has(e.name) && !e.name.startsWith('.')) await walk(resolve(dir, e.name), depth + 1);
+    }
+  };
+  for (const root of allowedRoots) await walk(root, 0);
+  return [...new Set(found)];
+}
+
 async function resolveAllowedPath(file) {
-  const candidate = candidatePath(file);
+  let candidate = candidatePath(file);
   let real;
   try {
     real = await realpath(candidate);
   } catch {
-    throw new UserError(`File not found: ${file}`);
+    // Relative names: try the other allowed folders, then search them for the file name, so
+    // "sales.csv" works even when the file sits in a subfolder of the workspace.
+    const f = normalizeFileRef(file);
+    if (!isAbsolute(f)) {
+      for (const root of allowedRoots.slice(1)) {
+        try { real = await realpath(resolve(root, f)); break; } catch { /* next */ }
+      }
+      if (!real) {
+        const hits = await findByName(basename(f));
+        const matching = hits.filter((h) => h.replace(/\\/g, '/').toLowerCase().endsWith(f.replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase()));
+        if (matching.length === 1) real = await realpath(matching[0]);
+        else if (matching.length > 1) throw new UserError(`More than one file matches "${file}": ${matching.slice(0, 5).join(', ')}. Give the full path.`);
+      }
+    }
+    if (!real) throw new UserError(`File not found: ${file}`);
   }
   if (await insideRoots(real)) return real;
   throw new UserError(`${file} is outside the allowed data folders (${allowedRoots.join(', ')}).`);
@@ -178,6 +229,52 @@ export async function loadTable(file) {
   return table;
 }
 
+/**
+ * The resolved path when this data file should be streamed (a large CSV, TSV or Parquet file),
+ * otherwise null (the tools then use loadTable).
+ */
+export async function largeFilePath(file) {
+  assertTabularSource(file);
+  const path = await resolveAllowedPath(file);
+  const st = await stat(path);
+  if (!st.isFile()) return null;
+  const { shouldStream } = await import('./big/service.js');
+  if (!(await shouldStream(path))) return null;
+  if (!['.parquet', '.pq'].includes(extname(path).toLowerCase())) {
+    // A .csv/.txt that actually holds JSON documents.
+    const fh = await open(path, 'r');
+    try {
+      const buf = Buffer.alloc(4096);
+      const { bytesRead } = await fh.read(buf, 0, 4096, 0);
+      const head = buf.subarray(0, bytesRead).toString('utf8');
+      if (/^\uFEFF?\s*[[{]/.test(head) && /^\uFEFF?\s*[[{]\s*["{[]/.test(head)) throw notTabular(`"${file}" contains JSON, which`);
+    } finally { await fh.close(); }
+  }
+  if (st.size > maxFileBytes()) {
+    throw new UserError(`${file} is ${Math.round(st.size / MB)} MB, larger than the ${Math.round(maxFileBytes() / MB)} MB limit set by STATS_EXPLORER_MAX_FILE_MB.`);
+  }
+  return path;
+}
+
+/**
+ * A table to choose columns from. Small files: the loaded table. Large (streamed) files: the header
+ * plus the first few thousand rows (`sample`), marked `big: true`; statistics on them are computed by
+ * streaming passes, never from the sample.
+ */
+export async function openTable(file) {
+  const big = await largeFilePath(file);
+  if (!big) return loadTable(file);
+  const { headSample, describe } = await import('./big/service.js');
+  try {
+    const info = await describe(big);
+    const sample = await headSample(big);
+    return { big: true, path: big, headers: info.headers, sample, warnings: info.warnings, info };
+  } catch (e) {
+    if (e instanceof UserError) throw e;
+    throw new UserError(`Could not read ${file}: ${e.message}`);
+  }
+}
+
 // ---------------------------------------------------------------- column helpers
 
 export const isMissing = (v) => isMissingValue(v);
@@ -239,6 +336,7 @@ export function numericColumn(table, column, rows) {
 
 /** True when every non-missing value is a number (and there is at least one). */
 export function isNumericColumn(table, column) {
+  if (table.big) return isNumericColumn(table.sample, column);
   const c = table.col(column);
   if (!c) return false;
   if (c.kind === 'num') { for (const v of c.data) if (v === v) return true; return false; }
@@ -282,6 +380,7 @@ export const categoryKey = (v) => (typeof v === 'string' ? v.trim() : String(v))
 
 /** Distinct non-missing values of a column, most frequent first. */
 export function categories(table, column) {
+  if (table.big) return categories(table.sample, column);
   const counts = new Map();
   forEachCategory(table, column, (k) => counts.set(k, (counts.get(k) || 0) + 1));
   return [...counts].sort((a, b) => b[1] - a[1]).map(([k]) => k);

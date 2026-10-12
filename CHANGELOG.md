@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.3.0
+
+**Data files of any size, including terabytes.** Files above `STATS_EXPLORER_STREAM_MB` (512 MB; for Parquet, the equivalent in rows × columns) are no longer loaded into memory; they are streamed.
+
+- **Parallel one-pass engine** (`src/big/`). Each tool reads only the columns it uses, in pieces split at line ends (CSV) or row groups (Parquet), one worker thread per core. Pieces are merged in file order. Memory doesn't grow with the file (about 0.5 GB with one reader, plus about 0.2 GB per extra reader): a 2.5 GB, 13-million-row CSV took 45 s on 1 core and 22 s on 2, and the same data as Parquet took 9 s.
+- **Exact statistics from running totals**: counts, means, variances, skewness and kurtosis (Pébay's merge formulas), covariances, and the sums of squares and cross-products behind ANOVA, ANCOVA and MANOVA. Every hypothesis test is exact on every row. Samples of up to 100,000 values keep their values, so for them every number equals the in-memory result.
+- **Estimates, labelled**: medians, quartiles, histogram bars and outlier counts of larger samples from a KLL quantile sketch (worst rank error 0.025% in tests on 5 million values); Spearman's ρ from a 100,000-pair random sample (0.878 vs an exact 0.8789 on 13 million rows); distinct-value counts above 10,000 from HyperLogLog (within about 2%). Results list their estimates in `large_file.approximate`.
+- **Line breaks inside quoted values** are detected at split points; the file is then re-read in one piece, so results never depend on how it was split.
+- **Asking first**: a full read expected to take over 2 minutes needs the user's choice: every row (exact) or a quick sample of about 1% in blocks spread across the file. Shown as a form where supported; otherwise via the new `large_file_plan` tool.
+- **Background jobs**: a read running longer than 40 s continues in the background (`STILL RUNNING` + `job_id`); `job_status` returns the normal result, with progress and time left meanwhile; `cancel_job` stops it. MCP progress notifications are sent while the request is open.
+- **Read once**: workflow steps 1–5 share one pass; with consent, the columns read are kept on disk for fast follow-ups (`manage_cache` lists or deletes them).
+- **Verified**: the whole test suite also passes with every file forced through the streaming path, and with only one-pass summaries; 228 tool calls (tests, charts, six-step workflows, CSV and Parquet, split into as many as 3 parallel pieces) give results identical to the in-memory path. New `test/big.test.mjs` covers the plan, sample, form, cache, background and cancel flows.
+- No default size limit any more (`STATS_EXPLORER_MAX_FILE_MB` can set one).
+
+## 1.2.1
+
+- **Files attached to the chat work.** References the way chat clients pass them are understood: `@sales.csv` (Claude Code), `#file:sales.csv` (VS Code), `file:///D:/My%20Data/sales.csv` links (decoded correctly on Windows), and names in quotes or backticks. A bare file name is also found in subfolders of the workspace.
+- The assistant is told to pass an attached file's path to the tools and never to read or paste its contents into the chat, which can make the chat unresponsive with large files.
+
 ## 1.2.0
 
 - **Large files, efficiently.** CSV and TSV files are now streamed in 1 MB chunks into compact column storage (numbers packed 8 bytes each; repeated text stored once and referenced by a 4-byte code). A 190 MB, 1,000,000-row CSV now loads in about 8 seconds with under 0.5 GB of memory (before: 23 seconds and 2.7 GB), and the 480 MB CSV ceiling is gone. Grouping, crosstabs and the file inspector work on the compact columns directly.

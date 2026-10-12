@@ -5,7 +5,8 @@ import { z } from 'zod';
 import { computeTest } from './engine/hypothesisTests.js';
 import { proportionCI, tTestPower, cohensD } from './engine/statsUtils.js';
 import { linearRegression } from './engine/regression.js';
-import { loadTable, numericColumn, requireColumn, isMissing, toNumber, categoryKey, forEachCategory, UserError, assertFlatRows } from './data.js';
+import { loadTable, largeFilePath, numericColumn, requireColumn, isMissing, toNumber, categoryKey, forEachCategory, UserError, assertFlatRows } from './data.js';
+import * as BIG from './big/bigtools.js';
 import {
   ALTERNATIVES, tPValue, zPValue, checkSample, checkVaries, checkLevel, magnitude, fmt, verdict, altPhrase,
   summarize, normalityWarnings, mean, variance, stdDev, inverseTCDF, inverseNormalCDF, formatPEq,
@@ -19,7 +20,8 @@ const alternative = z.enum(ALTERNATIVES).default('two-sided')
   .describe('two-sided (default), greater (first > second / sample > value), or less.');
 const alpha = z.number().gt(0).lt(1).default(0.05).describe('Significance level. Default 0.05.');
 const confidence = z.number().gt(0).lt(1).default(0.95).describe('Confidence level for intervals. Default 0.95.');
-const file = z.string().optional().describe('Path to a CSV, TSV, Excel (.xlsx/.xls) or Parquet file. Relative paths resolve against the workspace folder. JSON/BSON and other NoSQL data are not tabular and are not supported.');
+const FILE_HELP = 'Path to the data file: CSV, TSV, Excel (.xlsx/.xls) or Parquet. If the user attached the file to the chat, pass its path or name here (a file:// link, @name or #file:name also works); do not paste its contents. Relative names are found in the workspace folders. Files of millions of rows are fine. JSON/BSON and other NoSQL data are not tabular and are not supported.';
+const file = z.string().optional().describe(FILE_HELP);
 
 const join = (arr) => arr.join(',');
 
@@ -53,6 +55,7 @@ export function pairedColumns(table, a, b) {
 // ------------------------------------------------------------------ t-test
 
 async function tTest(a) {
+  if (a.file) { const big = await largeFilePath(a.file); if (big) return BIG.tTest(a, big); }
   const warnings = [];
   let x, y, names = [a.group1 || 'Sample 1', a.group2 || 'Sample 2'];
   const type = a.type;
@@ -236,6 +239,7 @@ async function zTest(a) {
 // ------------------------------------------------------------------ ANOVA
 
 async function anova(a) {
+  if (a.file) { const big = await largeFilePath(a.file); if (big) return BIG.anova(a, big); }
   let groups; // [{name, values}]
   if (a.file) {
     if (!a.column || !a.group_column) throw new UserError('ANOVA from a file needs column (numeric outcome) and group_column.');
@@ -330,6 +334,7 @@ export function crosstab(table, rowCol, colCol) {
 }
 
 async function chiSquare(a) {
+  if (a.file) { const big = await largeFilePath(a.file); if (big) return BIG.chiSquare(a, big); }
   const warnings = [];
   if (a.type === 'goodness_of_fit') {
     let observed = a.observed, cats = a.categories, expected = a.expected;
@@ -432,6 +437,7 @@ async function chiSquare(a) {
 function logChoose(n, k) { let s = 0; for (let i = 1; i <= k; i++) s += Math.log(n - k + i) - Math.log(i); return s; }
 
 async function fisherExact(a) {
+  if (a.file) { const big = await largeFilePath(a.file); if (big) return BIG.fisherExact(a, big); }
   let m = a.table, rl = a.row_labels, cl = a.col_labels;
   if (a.file) {
     if (!a.row_column || !a.col_column) throw new UserError("Fisher's test from a file needs row_column and col_column.");
@@ -514,6 +520,7 @@ function pearson(x, y) {
 }
 
 async function correlation(a) {
+  if (a.file) { const big = await largeFilePath(a.file); if (big) return BIG.correlation(a, big); }
   let x = a.x, y = a.y, xn = a.x_name || 'x', yn = a.y_name || 'y';
   if (a.file) {
     if (!a.x_column || !a.y_column) throw new UserError('Correlation from a file needs x_column and y_column.');
@@ -608,6 +615,7 @@ export async function rowsFor(a, numericCols, groupCol) {
 }
 
 async function ancova(a) {
+  if (a.file) { const big = await largeFilePath(a.file); if (big) return BIG.ancova(a, big); }
   const rows = await rowsFor(a, [a.outcome_column, a.covariate_column], a.group_column);
   const r = computeTest('ancova', { groupCol: a.group_column, outcomeCol: a.outcome_column, covariateCol: a.covariate_column, alpha: String(a.alpha) }, { rows });
   const [df1, df2] = String(r.df).split(',').map(Number);
@@ -634,6 +642,7 @@ async function ancova(a) {
 }
 
 async function manova(a) {
+  if (a.file) { const big = await largeFilePath(a.file); if (big) return BIG.manova(a, big); }
   if (!a.outcome_columns || a.outcome_columns.length < 2) throw new UserError('MANOVA needs at least 2 outcome_columns.');
   if (a.outcome_columns.length > 10) throw new UserError('At most 10 outcome columns.');
   const rows = await rowsFor(a, a.outcome_columns, a.group_column);
@@ -660,6 +669,7 @@ async function manova(a) {
 // ------------------------------------------------------------------ describe / CI / power / inspect
 
 async function describe(a) {
+  if (a.file) { const big = await largeFilePath(a.file); if (big) return BIG.describe(a, big); }
   let sets;
   if (a.file) {
     if (!a.column) throw new UserError('describe from a file needs column.');
@@ -691,6 +701,7 @@ async function confidenceInterval(a) {
     };
   }
   let values = a.values;
+  if (a.file) { const big = await largeFilePath(a.file); if (big) return BIG.confidenceInterval(a, big); }
   if (a.file) { if (!a.column) throw new UserError('column is required with file.'); values = numericColumn(await loadTable(a.file), a.column); }
   checkSample(values, 'values');
   checkVaries(values, 'values');
@@ -784,6 +795,7 @@ function profileColumn(table, h) {
 }
 
 async function inspectFile(a) {
+  { const big = await largeFilePath(a.file); if (big) return BIG.inspectFile(a, big); }
   const table = await loadTable(a.file);
   const columns = table.headers.map((h) => profileColumn(table, h));
   return {
@@ -843,7 +855,7 @@ export const TOOLS = [
   {
     name: 'inspect_data_file', title: 'Inspect a data file',
     description: 'Lists the columns of a local CSV/TSV/JSON file with their types, missing values, ranges and category values, plus a 5-row preview. Use before running tests on a file so you pass correct column and group names.',
-    inputSchema: { file: z.string().describe('Path to a CSV, TSV or JSON file.') },
+    inputSchema: { file: z.string().describe(FILE_HELP) },
     run: inspectFile,
   },
   {

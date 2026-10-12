@@ -71,6 +71,16 @@ Stats Explorer is built for tabular formats (CSV, TSV, Excel and Parquet) to run
 
 The tools read files only inside your open workspace folders, plus any folders you add under **Settings → Stats Explorer: Data Folders**. Paths outside those folders are refused, including through symlinks. Reports and charts are written only when you ask, and never over an existing file unless you agree.
 
+## Big data files, even terabytes
+
+Files of any size work. Above 512 MB, CSV, TSV and Parquet files are read in parallel streaming passes (one per CPU core). Memory doesn't grow with the file (about 0.5 GB, plus about 0.2 GB per extra core used). A 13-million-row, 2.5 GB CSV takes about 20 seconds on two cores.
+
+- Tests, means, standard deviations and confidence intervals are **exact** on every row. Medians, quartiles and histograms of very large groups are **estimated** from a quantile sketch, and the results say so.
+- If a full read would take more than 2 minutes, VS Code asks whether to read every row or a quick 1% sample.
+- Long reads continue in the background with a progress bar; the assistant checks back for the result.
+- With your OK, the columns that were read are kept, so follow-up questions take seconds.
+- Attaching a data file to the chat works: the assistant passes it to the tools instead of reading it into the conversation.
+
 ## Settings
 
 | Setting | Default | |
@@ -79,6 +89,13 @@ The tools read files only inside your open workspace folders, plus any folders y
 | `statsExplorer.confirmSelections` | on | Confirm columns, groups, chart types and report sections before anything runs |
 | `statsExplorer.dataFolders` | `[]` | Extra folders the tools may read |
 | `statsExplorer.showAppLink` | on | One-line link to the Stats Explorer app at the end of each result |
+| `statsExplorer.largeFiles.streamAboveMB` | 512 | Stream CSV/TSV/Parquet files above this size |
+| `statsExplorer.largeFiles.parallelReaders` | 0 (auto) | CPU cores used to read a large file |
+| `statsExplorer.largeFiles.askAboveMinutes` | 2 | Ask before a full read that would take longer |
+| `statsExplorer.largeFiles.samplePercent` | 1 | Size of the quick sample |
+| `statsExplorer.largeFiles.saveColumns` | ask | Keep columns read from large files for fast follow-ups |
+| `statsExplorer.largeFiles.cacheFolder` | temp folder | Where kept columns go |
+| `statsExplorer.maxFileMB` | 0 (no limit) | Refuse files larger than this |
 
 ## Use it in other editors
 

@@ -12,7 +12,15 @@ function settings() {
     showAppLink: cfg.get('showAppLink', true),
     guided: cfg.get('guidedWorkflow', true),
     confirm: cfg.get('confirmSelections', true),
-    maxFileMB: cfg.get('maxFileMB', 2048),
+    maxFileMB: cfg.get('maxFileMB', 0),
+    large: {
+      streamMB: cfg.get('largeFiles.streamAboveMB', 512),
+      workers: cfg.get('largeFiles.parallelReaders', 0),
+      askMinutes: cfg.get('largeFiles.askAboveMinutes', 2),
+      samplePercent: cfg.get('largeFiles.samplePercent', 1),
+      saveColumns: cfg.get('largeFiles.saveColumns', 'ask'),
+      cacheFolder: cfg.get('largeFiles.cacheFolder', ''),
+    },
   };
 }
 
@@ -23,7 +31,7 @@ function dataFolders() {
 }
 
 function serverDefinition(context) {
-  const { showAppLink, guided, confirm, maxFileMB } = settings();
+  const { showAppLink, guided, confirm, maxFileMB, large } = settings();
   const folders = dataFolders();
   const env = {
     // VS Code's own runtime runs the server, so users don't need Node.js installed.
@@ -31,8 +39,14 @@ function serverDefinition(context) {
     STATS_EXPLORER_HIDE_LINK: showAppLink ? '0' : '1',
     STATS_EXPLORER_GUIDED: guided ? 'on' : 'off',
     STATS_EXPLORER_CONFIRM_SELECTIONS: confirm ? 'on' : 'off',
-    STATS_EXPLORER_MAX_FILE_MB: String(maxFileMB > 0 ? maxFileMB : 2048),
+    STATS_EXPLORER_STREAM_MB: String(large.streamMB >= 0 ? large.streamMB : 512),
+    STATS_EXPLORER_ASK_SECONDS: String(Math.max(0, large.askMinutes) * 60),
+    STATS_EXPLORER_SAMPLE_PERCENT: String(large.samplePercent > 0 ? large.samplePercent : 1),
+    STATS_EXPLORER_CACHE: { always: 'on', never: 'off' }[large.saveColumns] || 'ask',
   };
+  if (maxFileMB > 0) env.STATS_EXPLORER_MAX_FILE_MB = String(maxFileMB);
+  if (large.workers > 0) env.STATS_EXPLORER_WORKERS = String(Math.floor(large.workers));
+  if (large.cacheFolder && large.cacheFolder.trim()) env.STATS_EXPLORER_CACHE_DIR = large.cacheFolder.trim();
   if (folders.length) env.STATS_EXPLORER_ROOTS = folders.join(path.delimiter);
   const def = new vscode.McpStdioServerDefinition(
     'Stats Explorer',

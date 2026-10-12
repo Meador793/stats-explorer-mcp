@@ -5,7 +5,8 @@ import { z } from 'zod';
 import { TOOLS } from './tools.js';
 import { guidedTools } from './workflow.js';
 import { createVisualizationTool, buildReportTool } from './report.js';
-import { UserError, NotTabularError, setAllowedRoots, getAllowedRoots, TABULAR_STATEMENT } from './data.js';
+import { UserError, NotTabularError, LargeFileError, setAllowedRoots, getAllowedRoots, TABULAR_STATEMENT, largeFilePath } from './data.js';
+import { runCall, jobStartedResult, jobTools } from './big/jobs.js';
 import { Session, STEPS } from './session.js';
 import { readConfig } from './config.js';
 import { APP_NAME, APP_URL, VERSION } from './brand.js';
@@ -24,10 +25,12 @@ ${STEPS.map((s) => `   ${s.number}. ${s.title} (${s.tool})`).join('\n')}
 4. Use only the columns, groups and chart types the user asked about. Every such selection is shown to the user to confirm; when a tool answers "CONFIRMATION NEEDED", relay the choices to the user, wait for their answer, and only then call again with the confirmation_token. Never confirm on the user's behalf.
 5. build_report only when the user asks for a report; it contains only the sections the user confirms.
 6. ${TABULAR_STATEMENT} If the data is JSON, BSON or another NoSQL / document source, say exactly that and suggest exporting it to CSV or Parquet; do not try to analyse it.
-Use inspect_data_file to learn a file's exact column names before proposing columns.`;
+Use inspect_data_file to learn a file's exact column names before proposing columns.
+7. Data files: when the user attaches or mentions a data file, pass its path (or the attachment's file name or file:// link) as \`file\`. Do not open, read or paste the file's contents into the conversation: these tools read the file directly, including very large files (millions of rows), and pasting even part of it wastes the context and can make the chat unresponsive.
+8. Very large files (gigabytes to terabytes) are read in parallel passes. If a tool answers LARGE FILE, ask the user whether to read every row (exact, may take minutes or hours) or a quick sample, then call large_file_plan and repeat the call. If a tool answers STILL RUNNING, tell the user and call job_status with the job_id until it returns the result. Results computed from a sketch or sample say so; mention that when reporting them.`;
 
 const CLASSIC_INSTRUCTIONS = `Statistics tools from ${APP_NAME}. Every result is computed deterministically by a test engine verified against SciPy and statsmodels, so report the returned numbers rather than estimating them yourself.
-Workflow: if the right test is unclear, call choose_test. For data in a file, call inspect_data_file first to get exact column and group names, then pass file + column names instead of copying values into the call. Use only columns the user asked about. Report the statistic, p-value, effect size and confidence interval, and mention any warnings. ${TABULAR_STATEMENT}`;
+Workflow: if the right test is unclear, call choose_test. For data in a file, call inspect_data_file first to get exact column and group names, then pass file + column names instead of copying values into the call. When the user attaches or mentions a data file, pass its path as file; do not read or paste its contents into the conversation, as the tools read it directly, even very large files. Use only columns the user asked about. Report the statistic, p-value, effect size and confidence interval, and mention any warnings. Very large files: if a tool answers LARGE FILE, ask the user and call large_file_plan; if it answers STILL RUNNING, call job_status with the job_id. ${TABULAR_STATEMENT}`;
 
 /** Footer line pointing to the visual app; set STATS_EXPLORER_HIDE_LINK=1 to drop it. */
 const footer = () => (process.env.STATS_EXPLORER_HIDE_LINK === '1' || !APP_URL ? '' : `\n\nExplore this visually in ${APP_NAME}: ${APP_URL}`);
@@ -50,27 +53,38 @@ export function createServer({ env = process.env } = {}) {
     ? guidedTools({ create_visualization: createVisualizationTool, build_report: buildReportTool })
     : TOOLS;
 
-  for (const tool of tools) {
+  const formatResult = ({ summary, data }) => {
+    const pending = ['needs_confirmation', 'needs_input', 'not_confirmed', 'running', 'needs_plan', 'cancelled'].includes(data?.status);
+    const warnings = !pending && data?.warnings?.length ? `\nWarnings:\n${data.warnings.map((w) => `- ${w}`).join('\n')}` : '';
+    return {
+      content: [{ type: 'text', text: `${summary.join('\n')}${warnings}${pending ? '' : footer()}\n\n${JSON.stringify(data)}` }],
+      structuredContent: data,
+    };
+  };
+  const formatError = (err) => {
+    if (err instanceof NotTabularError) {
+      return { content: [{ type: 'text', text: err.message }], structuredContent: { status: 'not_tabular', message: err.message }, isError: true };
+    }
+    if (err instanceof LargeFileError) {
+      return { content: [{ type: 'text', text: err.message }], structuredContent: { status: 'needs_plan', message: err.message } };
+    }
+    const message = err instanceof UserError ? err.message : `Unexpected error: ${err?.message || err}`;
+    if (!(err instanceof UserError)) console.error(err);
+    return { content: [{ type: 'text', text: message }], isError: true };
+  };
+
+  for (const tool of [...tools, ...jobTools({ largeFilePath, formatResult })]) {
     server.registerTool(
       tool.name,
       { title: tool.title, description: tool.description, inputSchema: tool.inputSchema, annotations: tool.annotations },
-      async (args) => {
-        try {
-          const { summary, data } = await tool.run(args, ctx);
-          const pending = data?.status === 'needs_confirmation' || data?.status === 'needs_input' || data?.status === 'not_confirmed';
-          const warnings = !pending && data?.warnings?.length ? `\nWarnings:\n${data.warnings.map((w) => `- ${w}`).join('\n')}` : '';
-          return {
-            content: [{ type: 'text', text: `${summary.join('\n')}${warnings}${pending ? '' : footer()}\n\n${JSON.stringify(data)}` }],
-            structuredContent: data,
-          };
-        } catch (err) {
-          if (err instanceof NotTabularError) {
-            return { content: [{ type: 'text', text: err.message }], structuredContent: { status: 'not_tabular', message: err.message }, isError: true };
-          }
-          const message = err instanceof UserError ? err.message : `Unexpected error: ${err?.message || err}`;
-          if (!(err instanceof UserError)) console.error(err);
-          return { content: [{ type: 'text', text: message }], isError: true };
+      async (args, extra) => {
+        if (tool.raw) {
+          try { return await tool.raw(args, ctx); } catch (err) { return formatError(err); }
         }
+        const r = await runCall(tool.name, () => tool.run(args, ctx), { ctx, extra });
+        if (r.job) return formatResult(jobStartedResult(r.job));
+        if (r.error) return formatError(r.error);
+        return formatResult(r.value);
       }
     );
   }

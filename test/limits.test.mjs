@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadTable, setAllowedRoots, maxFileBytes, DEFAULT_MAX_FILE_MB } from '../src/data.js';
 
-test('file size limit defaults to 2048 MB and follows STATS_EXPLORER_MAX_FILE_MB', () => {
+test('file size limit has no default cap (large files are streamed) and follows STATS_EXPLORER_MAX_FILE_MB', () => {
   assert.equal(maxFileBytes({}), DEFAULT_MAX_FILE_MB * 1024 * 1024);
   assert.equal(maxFileBytes({ STATS_EXPLORER_MAX_FILE_MB: '1000' }), 1000 * 1024 * 1024);
   assert.equal(maxFileBytes({ STATS_EXPLORER_MAX_FILE_MB: 'abc' }), DEFAULT_MAX_FILE_MB * 1024 * 1024);

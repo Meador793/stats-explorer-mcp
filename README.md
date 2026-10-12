@@ -109,6 +109,7 @@ A selection you've confirmed isn't asked about twice in the same session.
 | `correlation` | Pearson or Spearman r with CI and fitted line, **without** a p-value (a significance test goes through step 1) |
 | `create_visualization`, `build_report` | Charts and reports |
 | `workflow_status` | Where the current analysis is, and the saved results |
+| `large_file_plan`, `job_status`, `cancel_job`, `manage_cache` | Very large files: read all or a sample, background jobs, kept columns |
 
 Tests available in step 1: t-test (one-sample, paired, Welch or Student), z-test (mean with known σ, proportion), one-way ANOVA (with Bonferroni pairwise comparisons), ANCOVA, MANOVA, chi-square (goodness of fit, independence), Fisher's exact, exact binomial and correlation.
 
@@ -126,7 +127,7 @@ Stats Explorer is built for tabular formats (CSV, TSV, Excel and Parquet) to run
 - Excel serial dates are converted;
 - Parquet files compressed with Snappy, gzip, zstd, Brotli or LZ4 are all read.
 
-CSV and TSV files are streamed into compact column storage, so a 190 MB, 1,000,000-row CSV loads in about 8 seconds using under 0.5 GB of memory. Files up to 2 GB open by default (set `STATS_EXPLORER_MAX_FILE_MB` to change it); memory use is roughly 2 to 3 times the file size, less when columns repeat values. Excel and Parquet files are read whole, up to about 1.9 GB.
+There is no size limit for CSV, TSV and Parquet files; see [Large files](#large-files-gigabytes-to-terabytes).
 
 **JSON, BSON, NDJSON and NoSQL databases** (MongoDB, CouchDB, Redis connection strings, …) are document data, not tables. For these, every tool answers with that statement and suggests exporting to CSV or Parquet first (for example `mongoexport --type=csv`). Inline rows containing nested objects or arrays get the same answer.
 
@@ -136,6 +137,20 @@ Files are read only from allowed folders, and symlinks that point elsewhere are 
 2. the workspace roots your MCP client reports, otherwise
 3. the server's working directory.
 
+## Large files (gigabytes to terabytes)
+
+Files up to 512 MB are loaded into compact column storage (a 190 MB, 1,000,000-row CSV loads in about 8 seconds using under 0.5 GB of memory). Larger CSV, TSV and Parquet files have **no size limit**. They are streamed instead, in a single pass that every tool needs:
+
+- **One pass, fixed memory.** Each tool reads only the columns it uses, in parallel pieces (one per CPU core), and keeps running totals: counts, means, variances, sums of squares and cross-products. Memory does not grow with the file: about 0.5 GB with one reader, plus about 0.2 GB per extra parallel reader. A 2.5 GB, 13-million-row CSV took 45 seconds on 1 core and 22 seconds on 2; the same data as a 340 MB Parquet file took 9 seconds.
+- **Exact where it can be.** t-tests, z-tests, ANOVA (with pairwise comparisons), ANCOVA, MANOVA, chi-square, Fisher's exact, Pearson correlation, means, standard deviations, skewness, kurtosis and confidence intervals are exact on every row. Groups of up to 100,000 values keep their actual values, so everything about them is exact, medians included.
+- **Estimated where it must be, and labelled.** Medians, quartiles, histogram bars and outlier counts of larger groups come from a KLL quantile sketch (rank error about 0.03% in testing). Spearman's ρ comes from a random sample of 100,000 pairs, and `inspect_data_file`'s count of different values in a column, above 10,000, from HyperLogLog (within about 2%). Results that contain estimates list them in `large_file.approximate` and in their warnings.
+- **Asked first.** If reading the whole file would take more than 2 minutes, you are asked whether to read every row (exact) or a quick sample of about 1% of the rows in blocks spread across the file (fast, approximate). Clients with forms show the choice as a form; otherwise the assistant asks you and calls `large_file_plan`.
+- **Runs in the background.** A read that takes longer than 40 seconds continues as a background job; the tool answers `STILL RUNNING` with a `job_id`, and `job_status` returns the result when it's ready (with progress and time left meanwhile). `cancel_job` stops it. Clients that support MCP progress notifications see a progress bar.
+- **Read once.** The workflow steps share one pass: step 1 reads the file, and steps 2 to 5 reuse the totals. With your consent, the columns read can be kept on disk (8 bytes per number, 4 per text value), so later questions on them take seconds. `manage_cache` lists or deletes them.
+- **Same rules as small files.** The streaming reader applies the app's import rules exactly. It was checked against the in-memory reader on 24 edge-case files and 300 random ones, and on 228 tool calls (tests, charts and full six-step workflows) across CSV and Parquet files, split into as many as 3 parallel pieces. Line breaks inside quoted values are handled: if a split point falls inside one, the file is re-read in one piece.
+
+Excel files are always read whole (up to about 1.9 GB); export very large workbooks to CSV or Parquet.
+
 ## Configuration
 
 | Variable | Default | Effect |
@@ -143,7 +158,14 @@ Files are read only from allowed folders, and symlinks that point elsewhere are 
 | `STATS_EXPLORER_GUIDED` | `on` | `off` exposes the individual test tools (`t_test`, `anova`, …) directly, without `start_analysis` and the six steps |
 | `STATS_EXPLORER_CONFIRM_SELECTIONS` | `on` | `off` runs with the agent's column, chart and report choices without asking you |
 | `STATS_EXPLORER_ROOTS` | workspace | Folders data files may be read from (and reports written to) |
-| `STATS_EXPLORER_MAX_FILE_MB` | `2048` | Largest data file the tools will load, in MB |
+| `STATS_EXPLORER_STREAM_MB` | `512` | CSV/TSV/Parquet files above this size are streamed (Parquet: by rows × columns) |
+| `STATS_EXPLORER_WORKERS` | cores − 1 | Parallel readers for large files (at most 16 by default) |
+| `STATS_EXPLORER_ASK_SECONDS` | `120` | Ask before a full read expected to take longer than this |
+| `STATS_EXPLORER_BACKGROUND_SECONDS` | `40` | Continue as a background job after this long |
+| `STATS_EXPLORER_SAMPLE_PERCENT` | `1` | Size of the quick sample |
+| `STATS_EXPLORER_CACHE` | `ask` | Keep columns read from large files: `ask`, `on` or `off` |
+| `STATS_EXPLORER_CACHE_DIR` | system temp | Where kept columns go |
+| `STATS_EXPLORER_MAX_FILE_MB` | no limit | Refuse files larger than this |
 | `STATS_EXPLORER_HIDE_LINK` | `0` | `1` removes the one-line app link at the end of results |
 | `STATS_EXPLORER_APP_URL` | | Changes that link |
 
@@ -155,7 +177,8 @@ Known approximations, also stated in the results:
 
 - power uses the normal approximation (within about 0.01 of exact power, matching statsmodels' `NormalIndPower`);
 - Spearman p-values use the t approximation (as SciPy does);
-- chi-square tests use no continuity correction.
+- chi-square tests use no continuity correction;
+- on very large files, medians, quartiles, histogram bars, outlier counts and Spearman's ρ are estimated (see Large files).
 
 ## Limits worth knowing
 
@@ -166,7 +189,9 @@ Known approximations, also stated in the results:
 
 ```bash
 npm install
-npm test                      # reference, unit and guided-workflow tests
+npm test                      # reference, unit, guided-workflow and large-file tests
+STATS_EXPLORER_STREAM_MB=0 npm test                               # the same, every file through the streaming path
+STATS_EXPLORER_STREAM_MB=0 STATS_EXPLORER_EXACT_CAP=3 npm test    # ... using only one-pass summaries
 npm run inspect               # open the MCP Inspector
 npm run reference             # regenerate reference cases (needs Python + scipy + statsmodels)
 cd vscode-extension && npm install && npm test && npm run package   # build the .vsix
