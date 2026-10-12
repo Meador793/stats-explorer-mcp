@@ -12,6 +12,7 @@ function settings() {
     showAppLink: cfg.get('showAppLink', true),
     guided: cfg.get('guidedWorkflow', true),
     confirm: cfg.get('confirmSelections', true),
+    maxFileMB: cfg.get('maxFileMB', 250),
   };
 }
 
@@ -22,7 +23,7 @@ function dataFolders() {
 }
 
 function serverDefinition(context) {
-  const { showAppLink, guided, confirm } = settings();
+  const { showAppLink, guided, confirm, maxFileMB } = settings();
   const folders = dataFolders();
   const env = {
     // VS Code's own runtime runs the server, so users don't need Node.js installed.
@@ -30,6 +31,7 @@ function serverDefinition(context) {
     STATS_EXPLORER_HIDE_LINK: showAppLink ? '0' : '1',
     STATS_EXPLORER_GUIDED: guided ? 'on' : 'off',
     STATS_EXPLORER_CONFIRM_SELECTIONS: confirm ? 'on' : 'off',
+    STATS_EXPLORER_MAX_FILE_MB: String(maxFileMB > 0 ? maxFileMB : 250),
   };
   if (folders.length) env.STATS_EXPLORER_ROOTS = folders.join(path.delimiter);
   const def = new vscode.McpStdioServerDefinition(

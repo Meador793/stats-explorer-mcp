@@ -44,7 +44,7 @@ Create a **public** repository named exactly `stats-explorer-mcp` on github.com 
 
 ```bash
 git init
-git add -A && git commit -m "Stats Explorer MCP 1.1.0"
+git add -A && git commit -m "Stats Explorer MCP 1.1.1"
 git branch -M main
 git remote add origin https://github.com/YOUR_GITHUB_USERNAME/stats-explorer-mcp.git
 git push -u origin main
@@ -67,7 +67,7 @@ npm test
 npm run package
 ```
 
-This creates `stats-explorer-mcp-1.1.0.vsix`, which contains your publisher ID from step 0.2.
+This creates `stats-explorer-mcp-1.1.1.vsix`, which contains your publisher ID from step 0.2.
 
 ### A2. Try it in your own VS Code first
 
@@ -103,7 +103,7 @@ The Marketplace runs an automated scan before the listing goes live, usually wit
 
 ```bash
 npx ovsx create-namespace YOUR_PUBLISHER_ID -p <token>   # once
-npx ovsx publish stats-explorer-mcp-1.1.0.vsix -p <token>
+npx ovsx publish stats-explorer-mcp-1.1.1.vsix -p <token>
 ```
 
 ---
@@ -121,7 +121,7 @@ npm login              # once; turn on two-factor authentication when npm asks
 npm publish --access public
 ```
 
-Check it: <https://www.npmjs.com/package/stats-explorer-mcp> shows version 1.1.0, with the README and images. Running `npx -y stats-explorer-mcp` should print "Stats Explorer MCP server running on stdio" and wait; press Ctrl+C.
+Check it: <https://www.npmjs.com/package/stats-explorer-mcp> shows version 1.1.1, with the README and images. Running `npx -y stats-explorer-mcp` should print "Stats Explorer MCP server running on stdio" and wait; press Ctrl+C.
 
 ### B2. Install the registry's publishing tool
 
@@ -165,7 +165,7 @@ mcp-publisher publish
 curl "https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.YOUR_GITHUB_USERNAME/stats-explorer-mcp"
 ```
 
-The answer should include your server's name and version 1.1.0. Clients and directories that read the registry pick it up from there.
+The answer should include your server's name and version 1.1.1. Clients and directories that read the registry pick it up from there.
 
 ---
 

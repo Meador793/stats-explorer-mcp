@@ -7,7 +7,18 @@ import { readFile, realpath, stat, access } from 'node:fs/promises';
 import { isAbsolute, resolve, relative, extname, dirname } from 'node:path';
 import { parseDelimitedText, readExcel, readParquet, isMissingValue } from './engine/dataImport.js';
 
-export const MAX_FILE_BYTES = 50 * 1024 * 1024;
+// Files are read whole and parsed into memory (about 14 bytes of RAM per byte of CSV), so the limit is
+// configurable: STATS_EXPLORER_MAX_FILE_MB (default 250). Text files also have a hard ceiling because
+// Node cannot hold a string longer than about 512 MB; for bigger data, export a sample or use Parquet.
+export const DEFAULT_MAX_FILE_MB = 250;
+export const HARD_MAX_TEXT_MB = 480;
+export const HARD_MAX_BINARY_MB = 1900; // readFile() refuses files over 2 GiB
+const MB = 1024 * 1024;
+
+export function maxFileBytes(env = process.env) {
+  const n = Number(env.STATS_EXPLORER_MAX_FILE_MB);
+  return (Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_FILE_MB) * MB;
+}
 export const TABULAR_EXTENSIONS = ['.csv', '.tsv', '.txt', '.xlsx', '.xlsm', '.xls', '.parquet', '.pq'];
 
 export class UserError extends Error {}
@@ -123,7 +134,17 @@ export async function loadTable(file) {
   const path = await resolveAllowedPath(file);
   const st = await stat(path);
   if (!st.isFile()) throw new UserError(`${file} is not a file.`);
-  if (st.size > MAX_FILE_BYTES) throw new UserError(`${file} is larger than ${MAX_FILE_BYTES / 1024 / 1024} MB.`);
+  const ext0 = extname(path).toLowerCase();
+  const isText = !['.xlsx', '.xlsm', '.xls', '.parquet', '.pq'].includes(ext0);
+  const sizeMB = Math.round(st.size / MB);
+  const hard = isText ? HARD_MAX_TEXT_MB : HARD_MAX_BINARY_MB;
+  if (st.size > hard * MB) {
+    throw new UserError(`${file} is ${sizeMB} MB, more than the ${hard} MB this server can load${isText ? ' from a text file' : ''}. Export a sample of the rows${isText ? ', or convert it to Parquet (smaller and faster to read)' : ''} and analyse that.`);
+  }
+  if (st.size > maxFileBytes()) {
+    const limit = Math.round(maxFileBytes() / MB);
+    throw new UserError(`${file} is ${sizeMB} MB, larger than the current ${limit} MB limit. Raise it with the STATS_EXPLORER_MAX_FILE_MB setting (in VS Code: Settings → Stats Explorer: Max File MB). Loading needs roughly 14× the file size in free memory, so for very large files analyse a sample instead.`);
+  }
   const hit = cache.get(path);
   if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.table;
   const ext = extname(path).toLowerCase();
@@ -141,6 +162,9 @@ export async function loadTable(file) {
     }
   } catch (e) {
     if (e instanceof UserError) throw e;
+    if (e && (e.code === 'ERR_STRING_TOO_LONG' || e.code === 'ERR_FS_FILE_TOO_LARGE' || /array buffer allocation|out of memory/i.test(e.message))) {
+      throw new UserError(`${file} is too large to load in memory. Export a sample of the rows, or convert it to Parquet.`);
+    }
     throw new UserError(`Could not read ${file}: ${e.message}`);
   }
   const table = { ...parsed, path };

@@ -1,4 +1,4 @@
-import { test, before, after } from 'node:test';
+﻿import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync, mkdtempSync, symlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -79,6 +79,7 @@ test('lists all tools with read-only annotations', async () => {
 });
 
 test('files outside the allowed folders are refused, including via symlink', async () => {
+  // /etc/passwd exists only on Linux/macOS; on Windows it is a missing file. Either way nothing is read.
   assert.match(await errText('inspect_data_file', { file: '/etc/passwd' }), /outside the allowed|File not found/);
   const outside = mkdtempSync(join(tmpdir(), 'se-'));
   writeFileSync(join(outside, 'secret.csv'), 'a\n1\n');
@@ -86,9 +87,9 @@ test('files outside the allowed folders are refused, including via symlink', asy
   assert.match(await errText('inspect_data_file', { file: '../../package.json' }), /tabular formats/);
   const link = join(FIXTURES, 'link.csv');
   rmSync(link, { force: true });
-  symlinkSync(join(outside, 'secret.csv'), link);
+  let linked = true; try { symlinkSync(join(outside, 'secret.csv'), link); } catch (e) { if (e.code === 'EPERM') linked = false; else throw e; }
   try {
-    assert.match(await errText('inspect_data_file', { file: 'link.csv' }), /outside the allowed/);
+    if (linked) assert.match(await errText('inspect_data_file', { file: 'link.csv' }), /outside the allowed/);
   } finally {
     rmSync(link, { force: true });
     rmSync(outside, { recursive: true, force: true });

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1
+
+- **Bigger data files.** The file limit is now 250 MB (was 50 MB) and can be changed with `STATS_EXPLORER_MAX_FILE_MB`. A 190 MB, 1,000,000-row CSV loads in about 25 seconds the first time and is then cached. Loading needs roughly 14 times the file size in free memory, and a CSV can't exceed about 480 MB, so larger files get a clear message suggesting a sample or Parquet.
+- Fixed a Windows-only test that assumed `/etc/passwd` exists.
+
 ## 1.1.0
 
 - **Guided workflow by default.** Every analysis starts with `start_analysis`, where the AI classifies the request as a hypothesis test or an exploration. Hypothesis tests follow the six "Bring it all together" steps from the Stats Explorer app, in order (`state_hypotheses`, `check_assumptions`, `check_spread`, `power_analysis`, `run_test`, `base_rate_check` / `skip_step`). Explorations have no hypotheses, no p-values and no hypothesis section in reports.

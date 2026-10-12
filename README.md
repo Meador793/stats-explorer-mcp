@@ -126,7 +126,7 @@ Stats Explorer is built for tabular formats (CSV, TSV, Excel and Parquet) to run
 - Excel serial dates are converted;
 - Parquet files compressed with Snappy, gzip, zstd, Brotli or LZ4 are all read.
 
-The limit is 50 MB per file.
+Files up to 250 MB load by default (set `STATS_EXPLORER_MAX_FILE_MB` to change it). Loading needs roughly 14 times the file size in free memory, and a CSV can't exceed about 480 MB, so for larger data analyse a sample or convert it to Parquet.
 
 **JSON, BSON, NDJSON and NoSQL databases** (MongoDB, CouchDB, Redis connection strings, …) are document data, not tables. For these, every tool answers with that statement and suggests exporting to CSV or Parquet first (for example `mongoexport --type=csv`). Inline rows containing nested objects or arrays get the same answer.
 
@@ -143,6 +143,7 @@ Files are read only from allowed folders, and symlinks that point elsewhere are 
 | `STATS_EXPLORER_GUIDED` | `on` | `off` exposes the individual test tools (`t_test`, `anova`, …) directly, without `start_analysis` and the six steps |
 | `STATS_EXPLORER_CONFIRM_SELECTIONS` | `on` | `off` runs with the agent's column, chart and report choices without asking you |
 | `STATS_EXPLORER_ROOTS` | workspace | Folders data files may be read from (and reports written to) |
+| `STATS_EXPLORER_MAX_FILE_MB` | `250` | Largest data file the tools will load, in MB |
 | `STATS_EXPLORER_HIDE_LINK` | `0` | `1` removes the one-line app link at the end of results |
 | `STATS_EXPLORER_APP_URL` | | Changes that link |
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1
+
+- Data files up to 250 MB now load (was 50 MB). Change the limit under **Settings → Stats Explorer: Max File MB**. Large files need free memory of roughly 14 times their size.
+
 ## 1.1.0
 
 - The agent now classifies each request (hypothesis test or exploration) and follows Stats Explorer's six "Bring it all together" steps for hypothesis tests.
