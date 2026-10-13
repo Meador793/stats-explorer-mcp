@@ -2,9 +2,10 @@
 
 ![Stats Explorer MCP: verified statistics your AI assistant calls instead of guessing numbers](https://raw.githubusercontent.com/meador793/stats-explorer-mcp/main/docs/images/hero.png)
 
-An [MCP](https://modelcontextprotocol.io) server with **14 statistics tools an AI assistant can call instead of guessing numbers:**
+An [MCP](https://modelcontextprotocol.io) server with **16 statistics and analytics tools an AI assistant can call instead of guessing numbers, on data files of any size:**
 
 * **Tests:** t-tests, z-tests, ANOVA, ANCOVA, MANOVA, chi-square, Fisher's exact, binomial and correlation.
+* **Analytics:** totals, averages and counts by category (top N), and "what drives X?" rankings across every column.
 * **Helpers:** descriptive stats, confidence intervals, power analysis, a "which test should I use?" tool, and a data-file inspector.
 
 The tools can read a developer's CSV, TSV, Excel or Parquet files by column name, so large datasets never get pasted into the chat. Each result includes:
@@ -22,17 +23,35 @@ On top of that:
 
 The engine, the file import and the six-step guide are shared with the [Stats Explorer](https://github.com/meador793/stats-explorer-mcp) app, so results match the app exactly.
 
-## Install
+## Connect it (pick your assistant)
 
-**VS Code (Copilot agent mode):** install **Stats Explorer MCP** from the Extensions view. It registers itself, so you don't need Node.js or an `mcp.json` file.
+### GitHub Copilot in VS Code: about 1 minute, nothing else to install
 
-**Claude Code**
+1. In VS Code, open **Extensions** (Ctrl+Shift+X / Cmd+Shift+X), search **Stats Explorer MCP**, click **Install**.
+2. Open **Copilot Chat** and switch the mode dropdown to **Agent**.
+3. Click the **tools** icon in the chat box and check that **Stats Explorer** is listed and ticked.
+4. Open the folder that holds your data and ask a question (see [Example questions](#example-questions)).
+
+The extension registers the server itself, using VS Code's built-in runtime, so you don't need Node.js or an `mcp.json` file. Confirmations appear as forms you can edit.
+
+### Claude Code (terminal or the Claude Code panel in VS Code): about 2 minutes
+
+You need [Node.js](https://nodejs.org) 22 or later (24 LTS recommended). In a terminal, run this once:
 
 ```bash
-claude mcp add stats-explorer -- npx -y stats-explorer-mcp
+claude mcp add -s user stats-explorer -e STATS_EXPLORER_CONFIRM_VIA=chat -- npx -y stats-explorer-mcp
+claude mcp list
 ```
 
-**Claude Desktop, Cursor, Windsurf, Cline, nao (self-hosted) and other clients.** Add this to the client's MCP config (`claude_desktop_config.json`, `.cursor/mcp.json`, nao's `agent/mcps/mcp.json`, and so on):
+`claude mcp list` should show `stats-explorer … ✓ Connected`. Then **start a new Claude session**, because servers are loaded when a session starts. In VS Code: **Ctrl+Shift+P → Developer: Reload Window**, then **New session**. Type `/mcp` in the chat to see the servers the session has.
+
+- `-s user` makes it available in every folder (without it, only in the folder where you ran the command).
+- `STATS_EXPLORER_CONFIRM_VIA=chat` makes confirmations appear as messages in the chat, which you answer by replying. Claude Code doesn't always display form-style prompts.
+- If you have the VS Code extension installed, **Stats Explorer: Copy Setup Command for Claude Code** copies this command for you.
+
+### Claude Desktop, Cursor, Windsurf, Cline and other MCP clients
+
+Add this to the client's MCP config (`claude_desktop_config.json`, `.cursor/mcp.json`, and so on), then restart the client:
 
 ```json
 {
@@ -40,13 +59,26 @@ claude mcp add stats-explorer -- npx -y stats-explorer-mcp
     "stats-explorer": {
       "command": "npx",
       "args": ["-y", "stats-explorer-mcp"],
-      "env": { "STATS_EXPLORER_ROOTS": "/path/to/your/data" }
+      "env": { "STATS_EXPLORER_ROOTS": "/path/to/your/data", "STATS_EXPLORER_CONFIRM_VIA": "chat" }
     }
   }
 }
 ```
 
-Requires Node.js 22 or later (the current LTS, Node.js 24, is recommended). `env` is optional (see [Data files](#data-files)).
+Requires Node.js 22 or later. `STATS_EXPLORER_ROOTS` is the folder (or folders) the tools may read; see [Data files](#data-files).
+
+### Example questions
+
+Name the file in your message (or attach it); the assistant passes it to the tools and never pastes the data into the chat.
+
+- *What's in sales.csv?*
+- *Total revenue by state in sales.csv, top 10.* (group_summary)
+- *What drives profit in sales.csv?* (find_relationships, then follow-ups)
+- *Show the distribution of order value and a box plot by segment.*
+- *Does average profit differ between the Consumer and Business segments? Is it significant?* (six-step hypothesis test)
+- *Make an HTML report of what we found and save it as findings.html.*
+
+The `analyze`, `explore_data` and `hypothesis_test` prompts (slash commands in VS Code and Claude) start the same flows.
 
 ## How it works (default)
 
@@ -107,6 +139,8 @@ A selection you've confirmed isn't asked about twice in the same session.
 | `describe` | n, mean, SD, median, quartiles, range, skewness, kurtosis, shape, mean CI (optionally by group) |
 | `confidence_interval` | CI for a mean (t) or a proportion (Wilson) |
 | `correlation` | Pearson or Spearman r with CI and fitted line, **without** a p-value (a significance test goes through step 1) |
+| `group_summary` | Totals, averages, medians, counts per category; top N (analytics) |
+| `find_relationships` | Which columns relate most to a numeric outcome ("what drives X") |
 | `create_visualization`, `build_report` | Charts and reports |
 | `workflow_status` | Where the current analysis is, and the saved results |
 | `large_file_plan`, `job_status`, `cancel_job`, `manage_cache` | Very large files: read all or a sample, background jobs, kept columns |
@@ -166,6 +200,7 @@ Excel files are always read whole (up to about 1.9 GB); export very large workbo
 | `STATS_EXPLORER_CACHE` | `ask` | Keep columns read from large files: `ask`, `on` or `off` |
 | `STATS_EXPLORER_CACHE_DIR` | system temp | Where kept columns go |
 | `STATS_EXPLORER_MAX_FILE_MB` | no limit | Refuse files larger than this |
+| `STATS_EXPLORER_CONFIRM_VIA` | `auto` | `chat` asks for confirmations in the conversation even if the client claims to support forms (recommended for Claude Code) |
 | `STATS_EXPLORER_HIDE_LINK` | `0` | `1` removes the one-line app link at the end of results |
 | `STATS_EXPLORER_APP_URL` | | Changes that link |
 

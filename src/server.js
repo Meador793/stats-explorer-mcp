@@ -7,30 +7,37 @@ import { guidedTools } from './workflow.js';
 import { createVisualizationTool, buildReportTool } from './report.js';
 import { UserError, NotTabularError, LargeFileError, setAllowedRoots, getAllowedRoots, TABULAR_STATEMENT, largeFilePath } from './data.js';
 import { runCall, jobStartedResult, jobTools } from './big/jobs.js';
+import { relationshipsTool, guidedRelationshipsTool } from './relationships.js';
 import { Session, STEPS } from './session.js';
 import { readConfig } from './config.js';
 import { APP_NAME, APP_URL, VERSION } from './brand.js';
 
-const GUIDED_INSTRUCTIONS = `Statistics tools from ${APP_NAME}. Results are computed by an engine verified against SciPy and statsmodels: report the returned numbers, never estimate them yourself.
+const GUIDED_INSTRUCTIONS = `Statistics and analytics tools from ${APP_NAME}, for questions about tabular data files (CSV, TSV, Excel, Parquet) of any size. Results come from an engine verified against SciPy and statsmodels: report the returned numbers, never estimate or recompute them yourself.
 
-How to work with these tools (default behaviour):
-1. Classify the request before doing anything else, then call start_analysis with the user's words:
-   - mode "hypothesis_test" when the user wants to know whether a difference, effect, change or relationship is real, significant, or caused by something, or wants to test a claim ("does X affect Y", "is A better than B", "is this significant").
-   - mode "explore" when the user wants to describe, summarise, visualise, estimate a value with a confidence interval, check a correlation's strength, or plan a sample size, without testing a claim.
-   - If it is genuinely unclear, ask the user which they want. Never add a hypothesis test the user did not ask for.
-2. Hypothesis tests follow the six steps of ${APP_NAME}'s "Bring it all together" guide, in order:
+Answering a data question:
+1. Find the file. When the user attaches or mentions a data file, pass its path, name or file:// link as \`file\`; never open, read or paste its contents into the conversation (the tools read it directly, even very large files; pasting wastes the context and can freeze the chat). If no file is named, ask which one.
+2. Learn the columns with inspect_data_file before choosing any. Map the user's words to the real column names ("sales" → Revenue, "region" → State) and say which columns you picked.
+3. Decide what kind of question it is, then call start_analysis with the user's words:
+   - mode "explore" for analytics and data-science questions that describe, compare, rank, summarise, visualise, estimate or look for patterns: "total revenue by region", "top 10 products by profit", "average order value by segment", "how is X distributed", "what drives Y", "what is related to Y", "trend of X by month", "how many customers churned", "what does this data look like". Most business questions are this kind.
+   - mode "hypothesis_test" when the user wants to know whether a difference, effect, change or relationship is real, significant, or not due to chance, or wants to test or prove a claim: "is the difference significant", "does the new design increase conversion", "is A really better than B".
+   - If it is unclear, explore first and offer a test afterwards. Never add a hypothesis test the user did not ask for.
+4. Explorations: pick the tools that answer the question, and combine several when needed:
+   - group_summary: totals, averages, medians, counts, min/max per category; top N; shares of rows ("revenue by state", "top products").
+   - find_relationships: rank which columns relate most to a numeric outcome ("what drives profit"). Follow up on the top findings with group_summary or a chart.
+   - describe: distribution, spread, shape, outliers of a column (optionally by group). confidence_interval: an estimate with its uncertainty.
+   - correlation: strength of one relationship (no p-value). create_visualization: histogram, box plot, scatter, bar, line or pie.
+   - power_analysis: sample-size planning. base_rate_check: rare-event screening (fraud, defects, diagnoses).
+   Explorations have no hypotheses and no p-values. Answer in plain language with the key numbers, point out caveats (associations are not causes; estimates from samples), and suggest one sensible next step.
+5. Hypothesis tests follow the six steps of ${APP_NAME}'s "Bring it all together" guide, in order:
 ${STEPS.map((s) => `   ${s.number}. ${s.title} (${s.tool})`).join('\n')}
-   Step 1 fixes the hypotheses, direction, α, test and columns before any result is seen. Steps 4 and 6 may be skipped only with a reason (skip_step).
-3. Explorations use describe, confidence_interval, correlation (descriptive, no p-value), create_visualization, power_analysis and base_rate_check. They have no hypotheses, no p-values and no hypothesis section in the report.
-4. Use only the columns, groups and chart types the user asked about. Every such selection is shown to the user to confirm; when a tool answers "CONFIRMATION NEEDED", relay the choices to the user, wait for their answer, and only then call again with the confirmation_token. Never confirm on the user's behalf.
-5. build_report only when the user asks for a report; it contains only the sections the user confirms.
-6. ${TABULAR_STATEMENT} If the data is JSON, BSON or another NoSQL / document source, say exactly that and suggest exporting it to CSV or Parquet; do not try to analyse it.
-Use inspect_data_file to learn a file's exact column names before proposing columns.
-7. Data files: when the user attaches or mentions a data file, pass its path (or the attachment's file name or file:// link) as \`file\`. Do not open, read or paste the file's contents into the conversation: these tools read the file directly, including very large files (millions of rows), and pasting even part of it wastes the context and can make the chat unresponsive.
-8. Very large files (gigabytes to terabytes) are read in parallel passes. If a tool answers LARGE FILE, ask the user whether to read every row (exact, may take minutes or hours) or a quick sample, then call large_file_plan and repeat the call. If a tool answers STILL RUNNING, tell the user and call job_status with the job_id until it returns the result. Results computed from a sketch or sample say so; mention that when reporting them.`;
+   Step 1 fixes the hypotheses, direction, α, test and columns before any result is seen (choose_test helps pick the test). Steps 4 and 6 may be skipped only with a reason (skip_step). Report the p-value together with the effect size and confidence interval.
+6. Use only the columns, groups and chart types the user asked about or that the question clearly needs. Every such selection is shown to the user to confirm. When a tool answers "CONFIRMATION NEEDED", show the user the proposed choices in plain words, wait for their reply, then call again with the confirmation_token. Never confirm on the user's behalf. If the user declines a form, ask what to change.
+7. build_report only when the user asks for a report (or a write-up / document); it contains only the sections the user confirms. To save it, pass save_to (.html or .md).
+8. ${TABULAR_STATEMENT} If the data is JSON, BSON or another NoSQL / document source, say exactly that and suggest exporting it to CSV or Parquet; do not try to analyse it.
+9. Very large files (gigabytes to terabytes) are read in parallel passes. If a tool answers LARGE FILE, ask the user whether to read every row (exact, may take a while) or a quick sample, then call large_file_plan and repeat the call. If a tool answers STILL RUNNING, tell the user and call job_status with the job_id until it returns. Results estimated from a sketch or sample say so; mention that when reporting them.`;
 
-const CLASSIC_INSTRUCTIONS = `Statistics tools from ${APP_NAME}. Every result is computed deterministically by a test engine verified against SciPy and statsmodels, so report the returned numbers rather than estimating them yourself.
-Workflow: if the right test is unclear, call choose_test. For data in a file, call inspect_data_file first to get exact column and group names, then pass file + column names instead of copying values into the call. When the user attaches or mentions a data file, pass its path as file; do not read or paste its contents into the conversation, as the tools read it directly, even very large files. Use only columns the user asked about. Report the statistic, p-value, effect size and confidence interval, and mention any warnings. Very large files: if a tool answers LARGE FILE, ask the user and call large_file_plan; if it answers STILL RUNNING, call job_status with the job_id. ${TABULAR_STATEMENT}`;
+const CLASSIC_INSTRUCTIONS = `Statistics and analytics tools from ${APP_NAME} for tabular data files of any size. Every result is computed deterministically by an engine verified against SciPy and statsmodels, so report the returned numbers rather than estimating them yourself.
+When the user attaches or mentions a data file, pass its path as file; never read or paste its contents into the conversation (the tools read it directly, even very large files). Call inspect_data_file first to get exact column and group names, and map the user's words to them. For analytics questions use group_summary (totals, averages, counts or top N per category), find_relationships (what relates to / drives a numeric column), describe, correlation and confidence_interval; for "is it significant / real" questions use the test tools (choose_test helps pick one) and report the statistic, p-value, effect size and confidence interval with any warnings. Use only columns the question needs. Very large files: if a tool answers LARGE FILE, ask the user and call large_file_plan; if it answers STILL RUNNING, call job_status with the job_id. ${TABULAR_STATEMENT}`;
 
 /** Footer line pointing to the visual app; set STATS_EXPLORER_HIDE_LINK=1 to drop it. */
 const footer = () => (process.env.STATS_EXPLORER_HIDE_LINK === '1' || !APP_URL ? '' : `\n\nExplore this visually in ${APP_NAME}: ${APP_URL}`);
@@ -50,8 +57,8 @@ export function createServer({ env = process.env } = {}) {
   );
   const ctx = { session, server: server.server, config };
   const tools = config.guided
-    ? guidedTools({ create_visualization: createVisualizationTool, build_report: buildReportTool })
-    : TOOLS;
+    ? [...guidedTools({ create_visualization: createVisualizationTool, build_report: buildReportTool }), guidedRelationshipsTool]
+    : [...TOOLS, relationshipsTool];
 
   const formatResult = ({ summary, data }) => {
     const pending = ['needs_confirmation', 'needs_input', 'not_confirmed', 'running', 'needs_plan', 'cancelled'].includes(data?.status);
@@ -96,6 +103,13 @@ export function createServer({ env = process.env } = {}) {
       argsSchema: { question: z.string().describe('What do you want to know?'), file: z.string().optional().describe('Data file (CSV, TSV, Excel, Parquet)') },
     }, ({ question, file }) => ({
       messages: [{ role: 'user', content: { type: 'text', text: `Use Stats Explorer to answer this as a hypothesis test${file ? ` using ${file}` : ''}: ${question}\nStart with start_analysis (mode hypothesis_test), follow steps 1–6 in order, ask me to confirm every column and group choice, and only build a report if I ask for one.` } }],
+    }));
+    server.registerPrompt('analyze', {
+      title: 'Ask a data question with Stats Explorer',
+      description: 'Any analytics or statistics question about a data file: summaries, rankings, drivers, distributions, charts or significance tests.',
+      argsSchema: { question: z.string().describe('Your question, in your own words'), file: z.string().optional().describe('Data file (CSV, TSV, Excel, Parquet)') },
+    }, ({ question, file }) => ({
+      messages: [{ role: 'user', content: { type: 'text', text: `Use the Stats Explorer tools to answer this${file ? ` about ${file}` : ''}: ${question}\nInspect the columns first, pick the right tools (explore unless I'm asking whether something is significant or real), ask me to confirm the columns before running anything, and answer in plain language with the key numbers.` } }],
     }));
     server.registerPrompt('explore_data', {
       title: 'Explore data with Stats Explorer',

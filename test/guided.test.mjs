@@ -31,7 +31,7 @@ test('guided mode is the default: workflow tools, no direct test tools', async (
   for (const n of ['start_analysis', 'state_hypotheses', 'check_assumptions', 'check_spread', 'power_analysis', 'run_test', 'base_rate_check', 'skip_step', 'describe', 'create_visualization', 'build_report']) assert.ok(names.includes(n), n);
   for (const n of ['t_test', 'anova', 'chi_square']) assert.ok(!names.includes(n), `${n} should only be reachable through run_test`);
   const prompts = (await c.listPrompts()).prompts.map((p) => p.name);
-  assert.deepEqual(prompts.sort(), ['explore_data', 'hypothesis_test']);
+  assert.deepEqual(prompts.sort(), ['analyze', 'explore_data', 'hypothesis_test']);
   assert.match(c.getInstructions(), /Bring it all together/);
   assert.match(c.getInstructions(), /built for tabular formats/);
   await c.close();

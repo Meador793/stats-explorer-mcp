@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.1
+
+- **Easier setup.** The README and Marketplace page have step-by-step setup for GitHub Copilot in VS Code (install, Agent mode, tools icon) and for Claude Code (one command, new session, `/mcp`), plus Claude Desktop / Cursor config. New VS Code command **Stats Explorer: Copy Setup Command for Claude Code**.
+- **Confirmations in the chat** (`STATS_EXPLORER_CONFIRM_VIA=chat`, VS Code setting `statsExplorer.confirmIn`): some clients, including Claude Code, advertise forms but decline them without showing them; in chat mode the proposal is shown as a message and the user's reply approves it.
+- **Flexible analytics questions.** New `group_summary` (totals, averages, medians, counts per category, top N) and `find_relationships` ("what drives X?": every column ranked by Pearson r or correlation ratio η against a numeric outcome, with highest/lowest groups), both on files of any size and in reports. Server instructions now cover everyday analytics and data-science questions (map words to columns, explore first, combine tools, plain-language answers) and a new `analyze` prompt starts any question.
+
 ## 1.3.0
 
 **Data files of any size, including terabytes.** Files above `STATS_EXPLORER_STREAM_MB` (512 MB; for Parquet, the equivalent in rows × columns) are no longer loaded into memory; they are streamed.

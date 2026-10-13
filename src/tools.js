@@ -9,7 +9,7 @@ import { loadTable, largeFilePath, numericColumn, requireColumn, isMissing, toNu
 import * as BIG from './big/bigtools.js';
 import {
   ALTERNATIVES, tPValue, zPValue, checkSample, checkVaries, checkLevel, magnitude, fmt, verdict, altPhrase,
-  summarize, normalityWarnings, mean, variance, stdDev, inverseTCDF, inverseNormalCDF, formatPEq,
+  summarize, normalityWarnings, mean, variance, stdDev, median, inverseTCDF, inverseNormalCDF, formatPEq,
 } from './stats.js';
 
 // ------------------------------------------------------------------ shared schema pieces
@@ -666,6 +666,51 @@ async function manova(a) {
   };
 }
 
+
+// ------------------------------------------------------------------ group summary (analytics)
+
+const AGGS = ['count', 'sum', 'mean', 'median', 'min', 'max', 'std_dev'];
+
+/** Builds the group_summary result from [{ group, n, sum, mean, median, min, max, std_dev }]. */
+export function groupSummaryResult(a, rows, { approximate = false } = {}) {
+  const stats = a.stats?.length ? a.stats : (a.value_column ? ['count', 'sum', 'mean', 'median'] : ['count']);
+  const key = a.sort_by || (a.value_column ? (stats.includes('sum') ? 'sum' : stats[0]) : 'count');
+  const total = rows.reduce((s, r) => s + r.count, 0);
+  const sorted = rows.slice().sort((p, q) => key === 'group'
+    ? String(p.group).localeCompare(String(q.group), undefined, { numeric: true })
+    : (a.descending === false ? p[key] - q[key] : q[key] - p[key]));
+  const shown = sorted.slice(0, a.top || 20);
+  const pick = (r) => Object.fromEntries([['group', r.group], ['share_of_rows', r.count / total], ...stats.map((k) => [k, r[k]])]);
+  const label = a.value_column ? `${a.value_column} by ${a.group_column}` : `Rows by ${a.group_column}`;
+  return {
+    data: { summary_of: label, groups_total: rows.length, rows_total: total, sorted_by: key, descending: a.descending !== false, groups: shown.map(pick), ...(approximate ? { approximate: ['median'] } : {}) },
+    summary: [
+      `${label}: ${rows.length} group${rows.length === 1 ? '' : 's'}, ${total} rows${rows.length > shown.length ? `; top ${shown.length} by ${key}` : ''}`,
+      ...shown.map((r) => `  ${r.group}: ${stats.map((k) => `${k} ${fmt(r[k])}`).join(', ')} (${fmt((r.count / total) * 100, 3)}% of rows)`),
+    ],
+  };
+}
+
+async function groupSummary(a) {
+  if (!a.file || !a.group_column) throw new UserError('group_summary needs file and group_column (and value_column to aggregate a number).');
+  { const big = await largeFilePath(a.file); if (big) return BIG.groupSummary(a, big); }
+  const table = await loadTable(a.file);
+  requireColumn(table, a.group_column, 'group column');
+  let rows;
+  if (a.value_column) {
+    rows = [...groupValues(table, a.value_column, a.group_column)].map(([group, v]) => ({
+      group, count: v.length, sum: v.reduce((s, x) => s + x, 0), mean: mean(v), median: median(v),
+      min: v.reduce((m, x) => (x < m ? x : m), Infinity), max: v.reduce((m, x) => (x > m ? x : m), -Infinity), std_dev: v.length > 1 ? stdDev(v) : null,
+    }));
+  } else {
+    const counts = new Map();
+    forEachCategory(table, a.group_column, (k) => counts.set(k, (counts.get(k) || 0) + 1));
+    rows = [...counts].map(([group, count]) => ({ group, count }));
+  }
+  if (!rows.length) throw new UserError(`No rows with both ${a.group_column}${a.value_column ? ` and ${a.value_column}` : ''}.`);
+  return groupSummaryResult(a, rows);
+}
+
 // ------------------------------------------------------------------ describe / CI / power / inspect
 
 async function describe(a) {
@@ -677,7 +722,7 @@ async function describe(a) {
     if (a.group_column) sets = [...groupValues(table, a.column, a.group_column)].map(([name, values]) => ({ name, values }));
     else sets = [{ name: a.column, values: numericColumn(table, a.column) }];
   } else sets = [{ name: a.name || 'values', values: a.values }];
-  if (sets.length > 50) throw new UserError('Over 50 groups; is group_column really categorical?');
+  if (sets.length > 100) throw new UserError('Over 100 groups; for many categories use group_summary instead.');
   for (const s of sets) checkSample(s.values, s.name, 1);
   const out = sets.map((s) => ({ name: s.name, ...summarize(s.values, a.confidence) }));
   return {
@@ -958,6 +1003,16 @@ export const TOOLS = [
     run: manova,
   },
   {
+    name: 'group_summary', title: 'Summary by group',
+    description: 'Analytics-style breakdown: count, sum, mean, median, min, max or SD of a numeric column for each category of another column (e.g. total revenue by region, average order value by segment, top 10 products by profit, rows per status), sorted, top N. Without value_column it counts rows per category. Descriptive only, no p-values.',
+    inputSchema: {
+      file, group_column: z.string(), value_column: z.string().optional(),
+      stats: z.array(z.enum(AGGS)).optional().describe('Which numbers to show (default count, sum, mean, median; just count without value_column).'),
+      sort_by: z.enum([...AGGS, 'group']).optional(), descending: z.boolean().default(true), top: z.number().int().min(1).max(500).default(20),
+    },
+    run: groupSummary,
+  },
+  {
     name: 'confidence_interval', title: 'Confidence interval',
     description: 'CI for a mean (t distribution; values or file + column) or a proportion (Wilson; successes + n).',
     inputSchema: {
@@ -981,4 +1036,4 @@ export const TOOLS = [
 export const _internal = { ranks, pearson, crosstab };
 
 /** Implementations by name, for the guided workflow. */
-export const IMPL = { tTest, zTest, anova, chiSquare, fisherExact, binomialTest, correlation, ancova, manova, describe, confidenceInterval, powerAnalysis, inspectFile, chooseTest };
+export const IMPL = { tTest, zTest, anova, chiSquare, fisherExact, binomialTest, correlation, ancova, manova, describe, confidenceInterval, powerAnalysis, inspectFile, chooseTest, groupSummary };

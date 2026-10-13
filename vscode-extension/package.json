@@ -1,8 +1,8 @@
 {
   "name": "stats-explorer-mcp",
   "displayName": "Stats Explorer MCP: Verified Statistics for AI Agents",
-  "description": "14 statistics tools your AI assistant calls instead of guessing numbers: t-tests, ANOVA, chi-square, correlation and more, with effect sizes, confidence intervals and plain-English results. Runs locally.",
-  "version": "1.3.0",
+  "description": "Statistics and analytics tools for Copilot and Claude: t-tests, ANOVA, chi-square, correlation, group summaries and \"what drives X\", with effect sizes, confidence intervals and plain-English results. Any file size. Runs locally.",
+  "version": "1.3.1",
   "publisher": "benmeador",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -54,6 +54,11 @@
         "category": "Stats Explorer"
       },
       {
+        "command": "statsExplorer.copyClaudeCommand",
+        "title": "Copy Setup Command for Claude Code",
+        "category": "Stats Explorer"
+      },
+      {
         "command": "statsExplorer.openApp",
         "title": "Open the Stats Explorer App",
         "category": "Stats Explorer"
@@ -74,6 +79,13 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Guide the AI through Stats Explorer's workflow: it first decides whether your request needs a hypothesis test or just exploration, and hypothesis tests follow the six *Bring it all together* steps in order. Turn off to give the AI the individual test tools directly."
+        },
+        "statsExplorer.confirmIn": {
+          "type": "string",
+          "enum": ["form", "chat"],
+          "enumDescriptions": ["Editable forms (Copilot in VS Code shows these)", "A message in the chat that you answer by replying"],
+          "default": "form",
+          "description": "Where confirmations appear."
         },
         "statsExplorer.confirmSelections": {
           "type": "boolean",

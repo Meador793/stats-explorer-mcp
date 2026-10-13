@@ -5,10 +5,11 @@
 // the output is identical. Otherwise the same output is computed from the one-pass summaries:
 // counts, means, variances, sums of squares and cross-products are exact; medians, quartiles and the
 // Spearman correlation are estimated (and say so).
-import { IMPL } from '../tools.js';
+import { IMPL, groupSummaryResult } from '../tools.js';
 import { accumulate } from './service.js';
 import { UserError } from '../errors.js';
 import {
+  sMedian,
   sMean, sVar, sSd, sSummarize, sNormalityWarnings, sCohensD, isExact,
 } from './sumstats.js';
 import {
@@ -461,7 +462,7 @@ export async function describe(a, path) {
     checkBad(r.states[0]); meta = r.meta;
     sets = [{ name: a.column, S: r.states[0].s }];
   }
-  if (sets.length > 50) throw new UserError('Over 50 groups; is group_column really categorical?');
+  if (sets.length > 100) throw new UserError('Over 100 groups; for many categories use group_summary instead.');
   for (const s of sets) need(s.S, s.name, 1);
   const out = sets.map((s) => ({ name: s.name, ...sSummarize(s.S, a.confidence) }));
   const approx = out.some((s) => s.approximate);
@@ -526,3 +527,26 @@ export async function baseRateCounts(path, cond, test) {
 }
 
 export { checkLevel };
+
+// ------------------------------------------------------------------ group summary
+
+export async function groupSummary(a, path) {
+  let rows, meta, approximate = false;
+  if (a.value_column) {
+    const r = await acc(path, [{ type: 'grouped', col: a.value_column, by: a.group_column }]);
+    checkBad(r.states[0]); meta = r.meta;
+    if (r.states[0].overflow) throw new UserError(`${a.group_column} has over 1,000 groups; group_summary covers up to 1,000.`);
+    rows = [...r.states[0].groups].map(([group, S]) => {
+      if (!isExact(S)) approximate = true;
+      const v = S.exact;
+      return { group, count: S.n, sum: v ? v.reduce((s, x) => s + x, 0) : S.mean * S.n, mean: sMean(S), median: sMedian(S), min: S.min, max: S.max, std_dev: S.n > 1 ? sSd(S) : null };
+    });
+  } else {
+    const { counts, meta: m } = await countsOf(path, a.group_column);
+    meta = m;
+    rows = [...counts].map(([group, count]) => ({ group, count }));
+  }
+  if (!rows.length) throw new UserError(`No rows with both ${a.group_column}${a.value_column ? ` and ${a.value_column}` : ''}.`);
+  const stats = a.stats?.length ? a.stats : (a.value_column ? ['count', 'sum', 'mean', 'median'] : ['count']);
+  return withMeta(groupSummaryResult(a, rows, { approximate: approximate && stats.includes('median') }), meta, { approximate: approximate && stats.includes('median') ? ['medians of groups with over 100,000 values'] : [] });
+}

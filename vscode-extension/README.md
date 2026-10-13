@@ -2,9 +2,10 @@
 
 ![Stats Explorer MCP: verified statistics your AI assistant calls instead of guessing numbers](https://raw.githubusercontent.com/meador793/stats-explorer-mcp/main/docs/images/hero.png)
 
-**14 statistics tools an AI assistant can call instead of guessing numbers:**
+**16 statistics and analytics tools an AI assistant can call instead of guessing numbers, on data files of any size:**
 
 * **Tests:** t-tests, z-tests, ANOVA, ANCOVA, MANOVA, chi-square, Fisher's exact, binomial and correlation.
+* **Analytics:** totals, averages and counts by category (top N), and "what drives X?" rankings across every column.
 * **Helpers:** descriptive stats, confidence intervals, power analysis, a "which test should I use?" tool, and a data-file inspector.
 
 The tools can read a developer's CSV, TSV, Excel or Parquet files by column name, so large datasets never get pasted into the chat. Each result includes:
@@ -44,23 +45,48 @@ Before anything runs, VS Code shows you the columns, groups, chart type or repor
 
 *Images show real output from the extension on a sample dataset.*
 
-## Try it
+## Set up in a minute
 
-Open a folder with a data file, switch Copilot Chat to **Agent** mode, and ask:
+**GitHub Copilot (VS Code):**
 
-> Does `score` differ between the groups in `data/trial.csv`?
+1. Install this extension (you're on its page). It needs nothing else, not even Node.js.
+2. Open **Copilot Chat** and set the mode to **Agent**.
+3. Click the **tools** icon in the chat box: **Stats Explorer** should be listed and ticked.
+4. Open the folder with your data and ask away.
 
-> Show me the distribution of `bp` and a box plot by `group`.
+**Claude Code (terminal or the Claude panel in VS Code):**
 
-> Make a report of what we found.
+1. Install [Node.js](https://nodejs.org) 22 or later.
+2. Run **Stats Explorer: Copy Setup Command for Claude Code** from the Command Palette (Ctrl+Shift+P), paste it into a terminal and press Enter. Or type it yourself:
+   `claude mcp add -s user stats-explorer -e STATS_EXPLORER_CONFIRM_VIA=chat -- npx -y stats-explorer-mcp`
+3. Start a **new** Claude session (Command Palette → **Developer: Reload Window**, then New session). Type `/mcp` to check that **stats-explorer** is connected.
 
-You can also use the slash commands **/mcp.stats-explorer.hypothesis_test** and **/mcp.stats-explorer.explore_data**.
+Claude asks you to confirm choices in the chat; reply to approve or change them.
+
+## Ask it anything about your data
+
+Name the file in your message (or attach it):
+
+> What's in sales.csv?
+
+> Total revenue by state in sales.csv, top 10.
+
+> What drives profit in sales.csv?
+
+> Show the distribution of order value and a box plot by segment.
+
+> Does average profit differ between the Consumer and Business segments? Is it significant?
+
+> Make an HTML report of what we found and save it as findings.html.
+
+You can also start from the slash commands **/mcp.stats-explorer.analyze**, **/mcp.stats-explorer.explore_data** and **/mcp.stats-explorer.hypothesis_test**.
 
 ## What's included
 
 | | |
 |---|---|
 | **Hypothesis tests** | t-tests (one-sample, paired, Welch/Student), z-tests, one-way ANOVA with pairwise comparisons, ANCOVA, MANOVA, chi-square, Fisher's exact, binomial, correlation |
+| **Analytics** | totals, averages, medians and counts by category (top N); "what drives X" rankings across every column |
 | **Helpers** | descriptive statistics and distribution shape, confidence intervals, power and sample-size planning, a test chooser, a data-file inspector, base-rate (PPV) checks |
 | **Charts** | histogram, box plot, scatter, bar, line, pie (light and dark mode) |
 | **Reports** | HTML or Markdown, containing only the sections you choose |
@@ -86,6 +112,7 @@ Files of any size work. Above 512 MB, CSV, TSV and Parquet files are read in par
 | Setting | Default | |
 |---|---|---|
 | `statsExplorer.guidedWorkflow` | on | Classify each request and follow the six steps for hypothesis tests. Off gives the assistant the individual test tools directly. |
+| `statsExplorer.confirmIn` | form | `chat` asks in the conversation instead of a form |
 | `statsExplorer.confirmSelections` | on | Confirm columns, groups, chart types and report sections before anything runs |
 | `statsExplorer.dataFolders` | `[]` | Extra folders the tools may read |
 | `statsExplorer.showAppLink` | on | One-line link to the Stats Explorer app at the end of each result |

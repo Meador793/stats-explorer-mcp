@@ -30,13 +30,13 @@ export const TESTS = {
   correlation: { impl: IMPL.correlation, label: 'correlation test', directional: true },
 };
 
-const NUMERIC_ROLES = ['column', 'column2', 'x_column', 'y_column', 'outcome_column', 'covariate_column'];
+const NUMERIC_ROLES = ['column', 'column2', 'x_column', 'y_column', 'outcome_column', 'covariate_column', 'value_column'];
 const CATEGORY_ROLES = ['group_column', 'row_column', 'col_column'];
 const ROLE_TITLES = {
   column: 'Measurement column', column2: 'Second column', x_column: 'X column', y_column: 'Y column',
   outcome_column: 'Outcome column', covariate_column: 'Covariate column', group_column: 'Group column',
   row_column: 'Row variable', col_column: 'Column variable', group1: 'First group', group2: 'Second group',
-  outcome_columns: 'Outcome columns',
+  outcome_columns: 'Outcome columns', value_column: 'Value column',
 };
 
 const token = z.string().optional().describe('Only after the user has confirmed the proposed choices: the confirmation_token from the previous response.');
@@ -85,10 +85,10 @@ async function startAnalysis(a, { session }) {
     };
   }
   return {
-    data: { analysis_id: an.id, mode: a.mode, tools: ['describe', 'confidence_interval', 'correlation', 'create_visualization', 'power_analysis', 'base_rate_check', 'build_report'] },
+    data: { analysis_id: an.id, mode: a.mode, tools: ['group_summary', 'find_relationships', 'describe', 'confidence_interval', 'correlation', 'create_visualization', 'power_analysis', 'base_rate_check', 'build_report'] },
     summary: [
       `Started analysis ${an.id}: exploring the data for "${a.question}".`,
-      'Use only what the user asked for: describe (summary statistics, shape, spread), confidence_interval (estimates), correlation (strength of a relationship, no p-value), create_visualization (charts), power_analysis (sample-size planning), base_rate_check (rare-event screening).',
+      'Use what the question needs, combining tools if necessary: group_summary (totals, averages, counts or medians per category, top N), find_relationships (which columns relate most to a numeric outcome: "what drives X"), describe (summary statistics, shape, spread), confidence_interval (estimates), correlation (strength of a relationship, no p-value), create_visualization (charts), power_analysis (sample-size planning), base_rate_check (rare-event screening).',
       'This is not a hypothesis test: do not state hypotheses or p-values, and the report will have no hypothesis section. If the user later asks whether a difference or relationship is real or significant, call start_analysis again with mode "hypothesis_test".',
       'Each column and chart choice is shown to the user to confirm before it runs; only include columns the user asked about.',
     ],
@@ -696,7 +696,7 @@ function guidedExplore(name, impl, makeIntro, { extra = () => [], descriptiveOnl
     Object.assign(args, c.values);
     delete args.confirmation_token;
     const res = await impl({ ...args, ...(descriptiveOnly ? { descriptive_only: true } : {}) });
-    const title = name === 'describe' ? `Descriptive statistics${args.column ? `: ${args.column}${args.group_column ? ` by ${args.group_column}` : ''}` : ''}`
+    const title = name === 'group_summary' ? `Summary${args.value_column ? ` of ${args.value_column}` : ''} by ${args.group_column}` : name === 'describe' ? `Descriptive statistics${args.column ? `: ${args.column}${args.group_column ? ` by ${args.group_column}` : ''}` : ''}`
       : name === 'confidence_interval' ? `Confidence interval${args.column ? `: ${args.column}` : ''}`
         : `Correlation${args.x_column ? `: ${args.x_column} vs ${args.y_column}` : ''}`;
     const r = session.addResult({ kind: name, title, data: res.data, summary: res.summary, selection: args });
@@ -720,7 +720,7 @@ export function guidedTools({ create_visualization, build_report }) {
       description: 'Call this first for every new question. Read the user\'s request and choose mode: "hypothesis_test" when they want to know whether a difference, effect or relationship is real / significant / caused by something, or want to test a claim; "explore" when they want to describe, summarise, visualise, estimate or plan, without testing a claim. If the request is ambiguous, ask the user before calling. Returns the steps to follow.',
       inputSchema: {
         question: z.string().min(3).describe("The user's request, in their own words."),
-        mode: z.enum(MODES),
+        mode: z.enum(MODES).describe('"explore" for describing, comparing, ranking, summarising, charting or finding patterns (most analytics questions); "hypothesis_test" when asked whether a difference or relationship is significant / real.'),
         file: z.string().optional().describe('The data file the user named or attached to the chat (CSV, TSV, Excel or Parquet): pass its path or name, never its contents. Large files are fine.'),
       },
       annotations: { title: 'Start an analysis', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -781,6 +781,12 @@ export function guidedTools({ create_visualization, build_report }) {
       description: 'n, mean, SD, median, quartiles, range, skewness, kurtosis, shape and CI for the mean, for a column the user asked about (optionally by group). The user confirms the columns first.',
       inputSchema: describeSchema, annotations: { title: 'Describe', ...RO },
       run: guidedExplore('describe', IMPL.describe, (t) => `Descriptive statistics from ${t.path}.`),
+    },
+    {
+      name: 'group_summary', title: 'Summary by group',
+      description: classic.group_summary.description + ' The user confirms the columns first.',
+      inputSchema: { ...classic.group_summary.inputSchema, confirmation_token: token }, annotations: { title: 'Summary by group', ...RO },
+      run: guidedExplore('group_summary', IMPL.groupSummary, (t) => `Summary by group from ${t.path}.`),
     },
     {
       name: 'confidence_interval', title: 'Confidence interval',

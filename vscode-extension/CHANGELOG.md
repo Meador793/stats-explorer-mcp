@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.1
+
+- Step-by-step setup for Copilot and Claude Code on this page; new command **Copy Setup Command for Claude Code**.
+- New setting **Confirm In**: forms (Copilot) or chat messages.
+- Ask everyday analytics questions: totals and averages by category, top N, and "what drives X?" rankings.
+
 ## 1.3.0
 
 - Data files of any size, including terabytes: large CSV, TSV and Parquet files are read in parallel streaming passes; memory doesn't grow with the file size. Tests are exact on every row; medians and histograms of very large groups are estimated and labelled.

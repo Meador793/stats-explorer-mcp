@@ -35,6 +35,8 @@ const CALLS = [
   ['describe', { file: 'data.csv', column: 'y', group_column: 'group' }],
   ['ancova', { file: 'data.csv', outcome_column: 'y', covariate_column: 'x', group_column: 'group' }],
   ['inspect_data_file', { file: 'data.csv' }],
+  ['group_summary', { file: 'data.csv', group_column: 'cat', value_column: 'y', stats: ['count', 'sum', 'mean', 'median', 'min', 'max', 'std_dev'] }],
+  ['find_relationships', { file: 'data.csv', target: 'y' }],
 ];
 const base = { STATS_EXPLORER_ROOTS: dir, STATS_EXPLORER_CACHE_DIR: cacheDir, STATS_EXPLORER_EXACT_CAP: '100000' };
 const strip = (o) => JSON.parse(JSON.stringify(o, (k, v) => (k === 'large_file' ? undefined : v)));

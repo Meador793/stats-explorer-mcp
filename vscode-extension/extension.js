@@ -12,6 +12,7 @@ function settings() {
     showAppLink: cfg.get('showAppLink', true),
     guided: cfg.get('guidedWorkflow', true),
     confirm: cfg.get('confirmSelections', true),
+    confirmIn: cfg.get('confirmIn', 'form'),
     maxFileMB: cfg.get('maxFileMB', 0),
     large: {
       streamMB: cfg.get('largeFiles.streamAboveMB', 512),
@@ -31,7 +32,7 @@ function dataFolders() {
 }
 
 function serverDefinition(context) {
-  const { showAppLink, guided, confirm, maxFileMB, large } = settings();
+  const { showAppLink, guided, confirm, confirmIn, maxFileMB, large } = settings();
   const folders = dataFolders();
   const env = {
     // VS Code's own runtime runs the server, so users don't need Node.js installed.
@@ -44,6 +45,7 @@ function serverDefinition(context) {
     STATS_EXPLORER_SAMPLE_PERCENT: String(large.samplePercent > 0 ? large.samplePercent : 1),
     STATS_EXPLORER_CACHE: { always: 'on', never: 'off' }[large.saveColumns] || 'ask',
   };
+  if (confirmIn === 'chat') env.STATS_EXPLORER_CONFIRM_VIA = 'chat';
   if (maxFileMB > 0) env.STATS_EXPLORER_MAX_FILE_MB = String(maxFileMB);
   if (large.workers > 0) env.STATS_EXPLORER_WORKERS = String(Math.floor(large.workers));
   if (large.cacheFolder && large.cacheFolder.trim()) env.STATS_EXPLORER_CACHE_DIR = large.cacheFolder.trim();
@@ -79,9 +81,13 @@ function activate(context) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('statsExplorer.copyMcpConfig', async () => {
-      const config = { mcpServers: { 'stats-explorer': { command: 'npx', args: ['-y', 'stats-explorer-mcp'] } } };
+      const config = { mcpServers: { 'stats-explorer': { command: 'npx', args: ['-y', 'stats-explorer-mcp'], env: { STATS_EXPLORER_CONFIRM_VIA: 'chat' } } } };
       await vscode.env.clipboard.writeText(JSON.stringify(config, null, 2));
       vscode.window.showInformationMessage('Copied MCP config for Cursor, Claude Desktop, Windsurf and other MCP clients (requires Node.js 22 or later).');
+    }),
+    vscode.commands.registerCommand('statsExplorer.copyClaudeCommand', async () => {
+      await vscode.env.clipboard.writeText('claude mcp add -s user stats-explorer -e STATS_EXPLORER_CONFIRM_VIA=chat -- npx -y stats-explorer-mcp');
+      vscode.window.showInformationMessage('Copied. Paste it into a terminal, then start a new Claude session (Developer: Reload Window). Requires Node.js 22 or later.');
     }),
     vscode.commands.registerCommand('statsExplorer.openApp', () => {
       vscode.env.openExternal(vscode.Uri.parse(context.extension.packageJSON.statsExplorer.appUrl));

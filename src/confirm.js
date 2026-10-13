@@ -13,6 +13,19 @@ import { UserError } from './data.js';
  * field: { key, title, type: 'select' | 'multiselect' | 'number' | 'text' | 'boolean',
  *          value, options?: string[], description?, min?, max? }
  */
+/**
+ * Whether to ask with a form (MCP elicitation) or in the chat (token flow).
+ * STATS_EXPLORER_CONFIRM_VIA: auto (default) | form | chat. In auto mode, Claude's clients get the
+ * chat flow: Claude Code advertises forms but its chat panel declines them without showing them.
+ */
+export function formsUsable(server) {
+  const via = (process.env.STATS_EXPLORER_CONFIRM_VIA || 'auto').toLowerCase();
+  if (via === 'chat' || !server?.getClientCapabilities?.()?.elicitation) return false;
+  if (via === 'form') return true;
+  const name = String(server.getClientVersion?.()?.name || '');
+  return !/claude/i.test(name);
+}
+
 const canonical = (kind, values) => JSON.stringify([kind, Object.keys(values).sort().map((k) => [k, values[k]])]);
 const MULTI_AS_CHECKBOXES = 25;
 const safeKey = (s) => String(s).replace(/[^A-Za-z0-9_]/g, '_').slice(0, 60);
@@ -87,7 +100,7 @@ export async function confirmSelection(ctx, { kind, intro, fields, token }) {
 
   const lines = fields.map((f) => `- ${f.title}: ${describeValue(f, f.value)}`);
 
-  if (server?.getClientCapabilities?.()?.elicitation) {
+  if (formsUsable(server)) {
     const { schema, map } = toElicitSchema(fields);
     try {
       const res = await server.elicitInput({ message: `${intro}\n\nCheck these choices. Change any that are wrong, then accept.`, requestedSchema: schema });

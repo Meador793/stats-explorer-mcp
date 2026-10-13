@@ -111,7 +111,7 @@ async function createVisualization(a, ctx) {
 
 // ------------------------------------------------------------------ build_report
 
-const REPORTABLE = ['hypothesis_test', 'describe', 'confidence_interval', 'correlation', 'visualization', 'base_rate', 'power'];
+const REPORTABLE = ['hypothesis_test', 'describe', 'confidence_interval', 'correlation', 'group_summary', 'relationships', 'visualization', 'base_rate', 'power'];
 
 function hypothesisStory(res, session) {
   const an = session.analyses.find((x) => x.id === res.analysisId);
@@ -168,6 +168,16 @@ function genericSection(res) {
     }
     case 'correlation':
       return { lines: [`${d.effect_size.name} = ${fmt(d.statistic.value, 4)} (${d.effect_size.magnitude}), n = ${d.n}.`, ...(d.confidence_interval ? [`${Math.round(d.confidence_interval.level * 100)}% CI ${fmt(d.confidence_interval.lower, 4)} to ${fmt(d.confidence_interval.upper, 4)}.`] : []), ...(d.linear_fit ? [`Least-squares line: ${d.linear_fit.formula} (R² = ${fmt(d.linear_fit.r_squared, 3)}).`] : []), d.interpretation] };
+    case 'group_summary': {
+      const cols = Object.keys(d.groups[0] || {}).filter((k) => k !== 'group');
+      const rows = d.groups.map((g) => [g.group, ...cols.map((k) => (k === 'share_of_rows' ? `${fmt(g[k] * 100, 3)}%` : fmt(g[k])))]);
+      return { table: { head: [d.summary_of.split(' by ').pop(), ...cols.map((k) => (k === 'share_of_rows' ? '% of rows' : k.replace('_', ' ')))], rows }, lines: [`${d.groups_total} groups, ${d.rows_total} rows${d.groups_total > d.groups.length ? `; showing the top ${d.groups.length} by ${d.sorted_by}` : ''}.`] };
+    }
+    case 'relationships':
+      return {
+        table: { head: ['Column', 'Type', 'Measure', 'Strength', 'Detail'], rows: d.relationships.map((r) => [r.column, r.kind, r.kind === 'numeric' ? `r = ${fmt(r.value, 3)}` : `η = ${fmt(r.value, 3)}`, r.label, r.kind === 'numeric' ? `n = ${r.n}` : `highest ${r.highest.group} (${fmt(r.highest.mean)}), lowest ${r.lowest.group} (${fmt(r.lowest.mean)})`]) },
+        lines: [`Ranked by how strongly each column relates to ${d.target}. ${d.method}`, d.warnings[0]],
+      };
     case 'base_rate':
       return { lines: [`Prevalence ${fmt(d.prevalence * 100, 3)}%, sensitivity ${fmt(d.sensitivity * 100, 3)}%, specificity ${fmt(d.specificity * 100, 3)}%.`, `PPV ${fmt(d.ppv * 100, 3)}%: of everything flagged positive, that share is really positive. Per 10,000 cases: ${d.per_10000.true_positive} true alarms, ${d.per_10000.false_positive} false alarms, ${d.per_10000.false_negative} missed.`] };
     case 'power':

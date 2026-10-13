@@ -13,6 +13,7 @@ import { parquetValue } from '../engine/dataImport.js';
 import { fromRows } from '../table.js';
 import { fileBuffer } from './source.js';
 import { LargeFileError } from '../errors.js';
+import { formsUsable } from '../confirm.js';
 export { LargeFileError };
 
 const MB = 1024 * 1024;
@@ -92,7 +93,7 @@ async function ensurePlan(info, ncols, cached) {
   if (full <= s.askSeconds) return { choice: 'full', cache: s.cache === 'on' };
   const call = currentCall();
   const server = call?.ctx?.server;
-  if (server?.getClientCapabilities?.()?.elicitation) {
+  if (formsUsable(server)) {
     const properties = {
       choice: { type: 'string', title: 'How should Stats Explorer read this file?', enum: ['full', 'sample', 'cancel'], enumNames: [`Read all of it: exact (${minutes(full)})`, `Quick estimate from a sample (${minutes(estimateSeconds(info, { sample: true }))})`, 'Cancel'], default: 'full' },
     };
