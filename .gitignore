@@ -5,3 +5,5 @@ vscode-extension/LICENSE
 *.vsix
 *.tgz
 .mcpregistry_*
+mcp-publisher.exe
+.mcpregistry_*
