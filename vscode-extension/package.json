@@ -2,7 +2,7 @@
   "name": "stats-explorer-mcp",
   "displayName": "Stats Explorer MCP: Verified Statistics for AI Agents",
   "description": "Statistics and analytics tools for Copilot and Claude: t-tests, ANOVA, chi-square, correlation, group summaries and \"what drives X\", with effect sizes, confidence intervals and plain-English results. Any file size. Runs locally.",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "publisher": "benmeador",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -26,7 +26,9 @@
     "anova",
     "copilot",
     "data analysis",
-    "csv"
+    "csv",
+    "jev",
+    "typesafe"
   ],
   "repository": {
     "type": "git",
@@ -59,6 +61,21 @@
         "category": "Stats Explorer"
       },
       {
+        "command": "statsExplorer.copyClaudeJevCommands",
+        "title": "Copy Setup Commands for Claude Code (with Jev)",
+        "category": "Stats Explorer"
+      },
+      {
+        "command": "statsExplorer.addJevRouting",
+        "title": "Add Jev Routing Instructions to This Workspace",
+        "category": "Stats Explorer"
+      },
+      {
+        "command": "statsExplorer.setTypeSafeKey",
+        "title": "Set TypeSafe API Key (for Jev enforce mode)",
+        "category": "Stats Explorer"
+      },
+      {
         "command": "statsExplorer.openApp",
         "title": "Open the Stats Explorer App",
         "category": "Stats Explorer"
@@ -82,8 +99,14 @@
         },
         "statsExplorer.confirmIn": {
           "type": "string",
-          "enum": ["form", "chat"],
-          "enumDescriptions": ["Editable forms (Copilot in VS Code shows these)", "A message in the chat that you answer by replying"],
+          "enum": [
+            "form",
+            "chat"
+          ],
+          "enumDescriptions": [
+            "Editable forms (Copilot in VS Code shows these)",
+            "A message in the chat that you answer by replying"
+          ],
           "default": "form",
           "description": "Where confirmations appear."
         },
@@ -91,6 +114,62 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Ask you to confirm every column, group, chart type and report section the AI picks (as dropdowns you can change) before anything runs."
+        },
+        "statsExplorer.jev.mode": {
+          "type": "string",
+          "enum": [
+            "off",
+            "cooperate",
+            "enforce"
+          ],
+          "enumDescriptions": [
+            "No Jev checks (default)",
+            "No orchestrator: Copilot/Claude call your Jev MCP server with packets Stats Explorer prepares, then record the answer",
+            "Stats Explorer calls the Jev API itself (set the key with \"Stats Explorer: Set TypeSafe API Key\"); the AI can't skip or alter the checks"
+          ],
+          "default": "off",
+          "markdownDescription": "Have **Jev** (TypeSafe's judgment model) independently check the test plan and the AI's written conclusions against the computed results. For production pipelines with an orchestrator, run the server with `STATS_EXPLORER_JEV=orchestrated` instead ([docs](https://github.com/meador793/stats-explorer-mcp/blob/main/docs/JEV.md))."
+        },
+        "statsExplorer.jev.checkpoints": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "plan",
+              "conclusions",
+              "data"
+            ]
+          },
+          "uniqueItems": true,
+          "default": [
+            "plan",
+            "conclusions"
+          ],
+          "markdownDescription": "Where Jev checks: `plan` (step 1 of a hypothesis test), `conclusions` (the AI's finding sentences), `data` (screens column names and text values in data files for instructions aimed at an AI; sends text samples to Jev)."
+        },
+        "statsExplorer.jev.waitForJev": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Cooperate mode: a checkpoint waits until the AI has recorded Jev's answer. Off = the check is only suggested."
+        },
+        "statsExplorer.jev.passAt": {
+          "type": "number",
+          "default": 0.8,
+          "minimum": 0,
+          "maximum": 1,
+          "description": "A check passes when Jev's probability that it is fine is at least this."
+        },
+        "statsExplorer.jev.failBelow": {
+          "type": "number",
+          "default": 0.5,
+          "minimum": 0,
+          "maximum": 1,
+          "description": "A check fails below this probability; in between, it is flagged for review."
+        },
+        "statsExplorer.jev.auditLog": {
+          "type": "string",
+          "default": "",
+          "description": "Path of a JSON Lines file that records every Jev checkpoint decision (no data values or keys). Empty = no log."
         },
         "statsExplorer.largeFiles.streamAboveMB": {
           "type": "number",
@@ -119,7 +198,11 @@
         },
         "statsExplorer.largeFiles.saveColumns": {
           "type": "string",
-          "enum": ["ask", "always", "never"],
+          "enum": [
+            "ask",
+            "always",
+            "never"
+          ],
           "default": "ask",
           "markdownDescription": "After a full read of a large file, keep the columns it read on disk (8 bytes per number, 4 per text value) so follow-up questions on them take seconds. `ask` asks each time."
         },

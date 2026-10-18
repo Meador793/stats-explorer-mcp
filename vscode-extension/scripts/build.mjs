@@ -25,4 +25,6 @@ await build({
   banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
   logLevel: 'info',
 });
+// Workspace routing instructions for the "Add Jev Routing Instructions" command (extension.js is CommonJS).
+await build({ entryPoints: [root('src/jev/workspace.js')], outfile: ext('dist/workspace.cjs'), bundle: true, platform: 'node', format: 'cjs', target: 'node22', logLevel: 'info' });
 copyFileSync(root('LICENSE'), ext('LICENSE'));

@@ -1,6 +1,7 @@
 **
 !extension.js
 !dist/server.mjs
+!dist/workspace.cjs
 !media/icon.png
 !package.json
 !README.md

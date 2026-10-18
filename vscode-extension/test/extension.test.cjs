@@ -29,7 +29,12 @@ const vscodeStub = {
     onDidChangeConfiguration: (fn) => { listeners.config.push(fn); return { dispose() {} }; },
   },
   commands: { registerCommand: (id, fn) => { commands[id] = fn; return { dispose() {} }; } },
-  window: { showInformationMessage: () => {} },
+  window: {
+    showInformationMessage: (m) => { vscodeStub.window.lastInfo = m; },
+    showWarningMessage: (m) => { vscodeStub.window.lastWarning = m; },
+    showInputBox: async () => vscodeStub.window.nextInput,
+    showQuickPick: async (items) => items.filter((i) => i.picked),
+  },
   env: { clipboard: { writeText: async (t) => { vscodeStub.env.clipboard.last = t; } }, openExternal: () => {} },
 };
 const origLoad = Module._load;
@@ -37,7 +42,9 @@ Module._load = function (request, ...rest) { return request === 'vscode' ? vscod
 
 const pkg = require(path.join(extDir, 'package.json'));
 const ext = require(path.join(extDir, 'extension.js'));
+const secretStore = new Map();
 const context = {
+  secrets: { get: async (k) => secretStore.get(k), store: async (k, v) => { secretStore.set(k, v); }, delete: async (k) => { secretStore.delete(k); }, onDidChange: () => ({ dispose() {} }) },
   subscriptions: [],
   asAbsolutePath: (p) => path.join(extDir, p),
   extension: { packageJSON: pkg },
@@ -99,6 +106,66 @@ test('the registered server starts and answers a tool call on a workspace file',
   assert.ok(Math.abs(r.structuredContent.statistic.value - -3.1622776601683795) < 1e-9);
   assert.ok(Math.abs(r.structuredContent.p_value - 0.03410942316740962) < 1e-9);
   assert.match(r.content[0].text, /Explore this visually/);
+  } finally {
+    await client.close();
+  }
+});
+
+test('Jev settings: modes map to server settings; the API key comes only from secret storage', async () => {
+  const provider = registered['statsExplorer.mcp'];
+  const [off] = await provider.provideMcpServerDefinitions();
+  assert.equal(off.env.STATS_EXPLORER_JEV, undefined, 'off by default');
+  config = { 'jev.mode': 'cooperate', 'jev.checkpoints': ['plan', 'conclusions', 'data'], 'jev.waitForJev': false };
+  const [coop] = await provider.provideMcpServerDefinitions();
+  assert.equal(coop.env.STATS_EXPLORER_JEV, 'cooperate');
+  assert.equal(coop.env.STATS_EXPLORER_JEV_CHECKPOINTS, 'plan,conclusions,data');
+  assert.equal(coop.env.STATS_EXPLORER_JEV_REQUIRE, 'off');
+  assert.equal(coop.env.TYPESAFE_API_KEY, undefined);
+
+  config = { 'jev.mode': 'enforce' };
+  vscodeStub.window.nextInput = '  ts-secret-key  ';
+  await commands['statsExplorer.setTypeSafeKey']();
+  const [listed] = await provider.provideMcpServerDefinitions();
+  assert.equal(listed.env.TYPESAFE_API_KEY, undefined, 'not in the listed definition');
+  const resolved = await provider.resolveMcpServerDefinition(listed);
+  assert.equal(resolved.env.TYPESAFE_API_KEY, 'ts-secret-key');
+  assert.equal(resolved.env.STATS_EXPLORER_JEV, 'enforce');
+  vscodeStub.window.nextInput = '';
+  await commands['statsExplorer.setTypeSafeKey']();
+  const noKey = await provider.resolveMcpServerDefinition(listed);
+  assert.equal(noKey.env.TYPESAFE_API_KEY, undefined);
+  assert.match(vscodeStub.window.lastWarning, /no TypeSafe API key/);
+
+  await commands['statsExplorer.copyClaudeJevCommands']();
+  assert.match(vscodeStub.env.clipboard.last, /STATS_EXPLORER_JEV=enforce/);
+  assert.match(vscodeStub.env.clipboard.last, /init-jev/);
+  config = { dataFolders: [], showAppLink: true, guidedWorkflow: true, confirmSelections: true };
+});
+
+test('Add Jev Routing Instructions writes CLAUDE.md and Copilot instructions once', async () => {
+  fs.writeFileSync(path.join(dataDir, 'CLAUDE.md'), '# Notes\n');
+  await commands['statsExplorer.addJevRouting']();
+  await commands['statsExplorer.addJevRouting']();
+  const claude = fs.readFileSync(path.join(dataDir, 'CLAUDE.md'), 'utf8');
+  assert.match(claude, /^# Notes/);
+  assert.equal(claude.split('stats-explorer:jev BEGIN').length, 2, 'one section after running twice');
+  assert.match(fs.readFileSync(path.join(dataDir, '.github', 'copilot-instructions.md'), 'utf8'), /JEV CHECK NEEDED/);
+});
+
+test('the bundled server runs Jev cooperate mode', async () => {
+  config = { 'jev.mode': 'cooperate' };
+  const [def] = await registered['statsExplorer.mcp'].provideMcpServerDefinitions();
+  config = { dataFolders: [], showAppLink: true, guidedWorkflow: true, confirmSelections: true };
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const { StdioClientTransport } = await import('@modelcontextprotocol/sdk/client/stdio.js');
+  const client = new Client({ name: 'ext-test', version: '1' });
+  await client.connect(new StdioClientTransport({ command: def.command, args: def.args, env: { ...process.env, ...def.env, STATS_EXPLORER_CONFIRM_SELECTIONS: 'off' }, cwd: def.cwd?.fsPath, stderr: 'ignore' }));
+  try {
+    const { tools } = await client.listTools();
+    assert.ok(tools.some((t) => t.name === 'check_conclusions') && tools.some((t) => t.name === 'record_verification'));
+    await client.callTool({ name: 'start_analysis', arguments: { question: 'Do groups A and B differ in score?', mode: 'hypothesis_test' } });
+    const st = await client.callTool({ name: 'state_hypotheses', arguments: { test: 't_test', test_arguments: { type: 'independent', file: 'scores.csv', column: 'score', group_column: 'group' } } });
+    assert.equal(st.structuredContent.status, 'needs_verification');
   } finally {
     await client.close();
   }

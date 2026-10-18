@@ -1,0 +1,85 @@
+patient,group,score,age,bp,chol,improved,site
+P001,Control,28.333,48,133.81,228.09,yes,"North, Clinic"
+P002,Control,21.045,37,142.05,202.3,yes,South
+P003,Control,20.535,53,143.64,243.89,no,"North, Clinic"
+P004,Control,NA,49,142.85,221.42,no,South
+P005,Control,25.34,44,145.49,202.23,yes,"North, Clinic"
+P006,Control,16.526,66,137.45,232.82,no,South
+P007,Control,26.278,35,124.08,207.87,yes,"North, Clinic"
+P008,Control,20.395,38,137.82,192.14,no,South
+P009,Control,23.383,39,154.55,256.63,yes,"North, Clinic"
+P010,Control,23.628,43,138.92,224.7,yes,South
+P011,Control,24.204,55,139.0,225.8,yes,"North, Clinic"
+P012,Control,21.113,62,134.15,221.42,yes,South
+P013,Control,15.95,22,113.16,163.57,no,"North, Clinic"
+P014,Control,18.094,33,124.72,247.12,no,South
+P015,Control,20.877,58,143.99,226.32,no,"North, Clinic"
+P016,Control,16.542,67,159.58,277.63,no,South
+P017,Control,20.257,68,141.67,236.74,no,"North, Clinic"
+P018,Control,22.508,55,136.5,211.5,yes,South
+P019,Control,18.709,22,133.57,187.36,no,"North, Clinic"
+P020,Control,20.925,24,124.93,209.8,no,South
+P021,Control,21.119,42,132.37,239.57,yes,"North, Clinic"
+P022,Control,16.702,44,135.47,224.44,no,South
+P023,Control,24.565,40,133.89,227.38,yes,"North, Clinic"
+P024,Control,22.741,66,158.97,244.79,yes,South
+P025,Control,22.948,52,139.82,230.26,yes,"North, Clinic"
+P026,Control,23.241,26,116.55,209.2,yes,South
+P027,Control,24.897,30,133.01,229.98,yes,"North, Clinic"
+P028,Control,19.971,69,152.72,226.48,no,South
+P029,Control,24.629,21,142.54,191.24,yes,"North, Clinic"
+P030,Control,14.874,58,148.16,248.55,no,South
+P031,Drug A,18.351,54,145.49,207.37,no,"North, Clinic"
+P032,Drug A,22.023,21,146.3,190.93,yes,South
+P033,Drug A,21.358,35,133.3,231.46,yes,"North, Clinic"
+P034,Drug A,15.573,59,137.44,204.42,no,South
+P035,Drug A,23.607,40,130.13,201.64,yes,"North, Clinic"
+P036,Drug A,10.983,59,138.8,228.19,no,South
+P037,Drug A,19.695,44,137.12,206.5,no,"North, Clinic"
+P038,Drug A,24.368,21,131.15,221.7,yes,South
+P039,Drug A,21.439,43,139.06,204.51,yes,"North, Clinic"
+P040,Drug A,23.381,46,135.48,235.52,yes,South
+P041,Drug A,,59,152.24,238.47,yes,"North, Clinic"
+P042,Drug A,18.199,60,144.42,228.56,no,South
+P043,Drug A,25.521,35,130.85,203.23,yes,"North, Clinic"
+P044,Drug A,25.107,21,137.71,193.92,yes,South
+P045,Drug A,17.055,61,158.21,241.79,no,"North, Clinic"
+P046,Drug A,23.395,35,139.59,223.07,yes,South
+P047,Drug A,23.187,39,127.81,200.55,yes,"North, Clinic"
+P048,Drug A,23.233,63,143.95,202.2,yes,South
+P049,Drug A,26.957,22,130.13,197.9,yes,"North, Clinic"
+P050,Drug A,22.378,36,141.37,201.14,yes,South
+P051,Drug A,25.521,30,138.54,194.38,yes,"North, Clinic"
+P052,Drug A,27.372,20,145.95,182.39,yes,South
+P053,Drug A,20.528,66,144.29,263.35,no,"North, Clinic"
+P054,Drug A,22.115,40,154.19,215.37,yes,South
+P055,Drug A,25.289,66,147.23,227.29,yes,"North, Clinic"
+P056,Drug A,25.492,46,138.83,211.87,yes,South
+P057,Drug A,20.235,45,126.64,207.66,no,"North, Clinic"
+P058,Drug A,17.187,25,134.28,205.8,no,South
+P059,Drug B,28.079,31,127.35,213.05,yes,"North, Clinic"
+P060,Drug B,23.203,25,135.48,204.78,yes,South
+P061,Drug B,25.408,68,142.69,228.37,yes,"North, Clinic"
+P062,Drug B,26.49,21,127.26,208.53,yes,South
+P063,Drug B,26.427,37,138.05,204.64,yes,"North, Clinic"
+P064,Drug B,11.985,57,146.24,195.32,no,South
+P065,Drug B,22.151,58,133.63,234.34,yes,"North, Clinic"
+P066,Drug B,14.661,67,143.37,233.51,no,South
+P067,Drug B,13.533,38,137.68,171.67,no,"North, Clinic"
+P068,Drug B,26.982,68,160.04,235.65,yes,South
+P069,Drug B,19.329,22,137.06,177.23,no,"North, Clinic"
+P070,Drug B,21.304,40,136.93,200.3,yes,South
+P071,Drug B,20.043,32,127.27,194.64,no,"North, Clinic"
+P072,Drug B,13.083,35,141.7,222.41,no,South
+P073,Drug B,15.049,25,126.48,205.34,no,"North, Clinic"
+P074,Drug B,9.902,31,139.7,199.38,no,South
+P075,Drug B,31.739,66,147.95,194.45,yes,"North, Clinic"
+P076,Drug B,12.92,44,135.04,170.63,no,South
+P077,Drug B,36.092,64,132.45,225.59,yes,"North, Clinic"
+P078,Drug B,16.9,27,137.99,179.26,no,South
+P079,Drug B,22.835,34,138.46,169.79,yes,"North, Clinic"
+P080,Drug B,13.924,62,151.85,226.92,no,South
+P081,Drug B,16.684,67,148.02,239.05,no,"North, Clinic"
+P082,Drug B,39.002,28,139.09,211.12,yes,South
+P083,Drug B,31.329,20,120.45,186.88,yes,"North, Clinic"
+P084,Drug B,11.733,40,134.15,217.75,no,South

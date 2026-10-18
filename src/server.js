@@ -4,13 +4,17 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { TOOLS } from './tools.js';
 import { guidedTools } from './workflow.js';
-import { createVisualizationTool, buildReportTool } from './report.js';
-import { UserError, NotTabularError, LargeFileError, setAllowedRoots, getAllowedRoots, TABULAR_STATEMENT, largeFilePath } from './data.js';
+import { createVisualizationTool, buildReportTool, withChecks } from './report.js';
+import { UserError, NotTabularError, LargeFileError, setAllowedRoots, getAllowedRoots, TABULAR_STATEMENT, largeFilePath, openTable } from './data.js';
 import { runCall, jobStartedResult, jobTools } from './big/jobs.js';
 import { relationshipsTool, guidedRelationshipsTool } from './relationships.js';
 import { Session, STEPS } from './session.js';
 import { readConfig } from './config.js';
 import { APP_NAME, APP_URL, VERSION } from './brand.js';
+import { readJevConfig } from './jev/config.js';
+import { JevGate } from './jev/gate.js';
+import { jevTools, jevInstructions } from './jev/tools.js';
+import { dataPacket, textSample } from './jev/checks.js';
 
 const GUIDED_INSTRUCTIONS = `Statistics and analytics tools from ${APP_NAME}, for questions about tabular data files (CSV, TSV, Excel, Parquet) of any size. Results come from an engine verified against SciPy and statsmodels: report the returned numbers, never estimate or recompute them yourself.
 
@@ -48,20 +52,46 @@ function rootsFromEnv() {
   return env.split(process.platform === 'win32' ? ';' : ':').filter(Boolean);
 }
 
-export function createServer({ env = process.env } = {}) {
+/** Tools whose results are hypothesis tests (classic mode keeps them for check_conclusions). */
+const TEST_TOOLS = new Set(['t_test', 'z_test', 'anova', 'chi_square', 'fisher_exact', 'binomial_test', 'ancova', 'manova']);
+const PENDING = ['needs_confirmation', 'needs_input', 'not_confirmed', 'running', 'needs_plan', 'cancelled', 'needs_verification', 'needs_approval', 'blocked_by_jev'];
+
+export function createServer({ env = process.env, fetchImpl } = {}) {
   const config = readConfig(env);
+  const jevConfig = readJevConfig(env);
+  for (const p of jevConfig.problems) console.error(`Stats Explorer (Jev): ${p}`);
   const session = new Session(config);
+  const jev = new JevGate(jevConfig, { fetchImpl });
   const server = new McpServer(
     { name: 'stats-explorer', title: APP_NAME, version: VERSION },
-    { instructions: config.guided ? GUIDED_INSTRUCTIONS : CLASSIC_INSTRUCTIONS, capabilities: { prompts: {} } }
+    { instructions: (config.guided ? GUIDED_INSTRUCTIONS : CLASSIC_INSTRUCTIONS) + (jev.enabled ? jevInstructions(jevConfig) : ''), capabilities: { prompts: {} } }
   );
-  const ctx = { session, server: server.server, config };
-  const tools = config.guided
-    ? [...guidedTools({ create_visualization: createVisualizationTool, build_report: buildReportTool }), guidedRelationshipsTool]
-    : [...TOOLS, relationshipsTool];
+  const ctx = { session, server: server.server, config, jev };
+  const tools = [
+    ...(config.guided
+      ? [...guidedTools({ create_visualization: createVisualizationTool, build_report: jev.enabled ? withChecks(buildReportTool) : buildReportTool }), guidedRelationshipsTool]
+      : [...TOOLS, relationshipsTool]),
+    ...(jev.enabled ? jevTools() : []),
+  ];
+  const jevToolNames = new Set(['check_conclusions', 'record_verification', 'job_status', 'cancel_job', 'large_file_plan']);
+
+  /** Data checkpoint: screen text in each file a tool is about to read (only when enabled). */
+  async function screenFiles(name, args) {
+    if (!jev.uses('data') || jevToolNames.has(name)) return { ok: true, notes: [] };
+    const files = [args?.file, args?.test_arguments?.file].filter((f) => typeof f === 'string' && f);
+    const notes = [];
+    for (const f of files) {
+      let table;
+      try { table = await openTable(f); } catch { continue; } // the tool reports the problem itself
+      const g = await jev.gate('data', table.path, dataPacket({ path: table.path, headers: table.headers, text: textSample(table) }));
+      if (!g.ok) return g;
+      notes.push(...g.notes);
+    }
+    return { ok: true, notes };
+  }
 
   const formatResult = ({ summary, data }) => {
-    const pending = ['needs_confirmation', 'needs_input', 'not_confirmed', 'running', 'needs_plan', 'cancelled'].includes(data?.status);
+    const pending = PENDING.includes(data?.status);
     const warnings = !pending && data?.warnings?.length ? `\nWarnings:\n${data.warnings.map((w) => `- ${w}`).join('\n')}` : '';
     return {
       content: [{ type: 'text', text: `${summary.join('\n')}${warnings}${pending ? '' : footer()}\n\n${JSON.stringify(data)}` }],
@@ -88,10 +118,20 @@ export function createServer({ env = process.env } = {}) {
         if (tool.raw) {
           try { return await tool.raw(args, ctx); } catch (err) { return formatError(err); }
         }
+        let screen;
+        try { screen = await screenFiles(tool.name, args); } catch (err) { return formatError(err); }
+        if (!screen.ok) return formatResult(screen.result);
         const r = await runCall(tool.name, () => tool.run(args, ctx), { ctx, extra });
         if (r.job) return formatResult(jobStartedResult(r.job));
         if (r.error) return formatError(r.error);
-        return formatResult(r.value);
+        const value = r.value;
+        // Classic mode has no saved results; keep them for check_conclusions when Jev checks are on.
+        if (jev.enabled && !config.guided && !jevToolNames.has(tool.name) && value?.data && !PENDING.includes(value.data.status) && tool.name !== 'inspect_data_file' && tool.name !== 'choose_test') {
+          const saved = session.addResult({ kind: TEST_TOOLS.has(tool.name) ? 'hypothesis_test' : tool.name, title: value.data.test || tool.title, data: value.data, summary: value.summary, selection: args });
+          value.data = { ...value.data, result_id: saved.id };
+        }
+        if (screen.notes.length) value.summary = [...value.summary, ...screen.notes];
+        return formatResult(value);
       }
     );
   }
@@ -111,6 +151,15 @@ export function createServer({ env = process.env } = {}) {
     }, ({ question, file }) => ({
       messages: [{ role: 'user', content: { type: 'text', text: `Use the Stats Explorer tools to answer this${file ? ` about ${file}` : ''}: ${question}\nInspect the columns first, pick the right tools (explore unless I'm asking whether something is significant or real), ask me to confirm the columns before running anything, and answer in plain language with the key numbers.` } }],
     }));
+    if (jev.enabled) {
+      server.registerPrompt('analyze_with_jev', {
+        title: 'Analyze with Stats Explorer, checked by Jev',
+        description: 'A data question where Stats Explorer computes the statistics and Jev independently checks the test plan and the written conclusions.',
+        argsSchema: { question: z.string().describe('Your question, in your own words'), file: z.string().optional().describe('Data file (CSV, TSV, Excel, Parquet)') },
+      }, ({ question, file }) => ({
+        messages: [{ role: 'user', content: { type: 'text', text: `Use Stats Explorer to answer this${file ? ` about ${file}` : ''}: ${question}\nStats Explorer computes every number; Jev checks the work. Inspect the columns first and ask me to confirm them. Whenever a tool answers JEV CHECK NEEDED, run the Jev tool with the packet it gives and record the answer with record_verification before continuing. Before you give me findings, run check_conclusions on your finding sentences and only tell me the claims that pass.` } }],
+      }));
+    }
     server.registerPrompt('explore_data', {
       title: 'Explore data with Stats Explorer',
       description: 'Describe, chart and estimate, without hypothesis tests.',

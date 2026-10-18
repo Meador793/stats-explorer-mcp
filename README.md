@@ -19,7 +19,8 @@ On top of that:
 - **Correct.** 43 reference cases are checked against SciPy and statsmodels on every commit, to at least 6 significant figures.
 - **Guided by default.** The agent first decides whether your request needs a hypothesis test or just exploration. Hypothesis tests follow the six steps of Stats Explorer's *Bring it all together* guide, in order.
 - **You stay in control.** Every column, group, chart type and report section the agent proposes is shown to you to confirm or change before anything runs.
-- **Private.** Runs locally over stdio. It makes no network calls and needs no API key. Data files are read only from your workspace folders.
+- **Private.** Runs locally over stdio. It makes no network calls and needs no API key (unless you turn on Jev's enforce mode, below). Data files are read only from your workspace folders.
+- **Checked by Jev, if you want.** Connect [Jev](docs/JEV.md), TypeSafe's fast judgment model, alongside it, and Jev independently checks the test plan and the assistant's written conclusions against the computed results. You can run it without an orchestrator, enforced by Stats Explorer itself, or under a production orchestrator that signs every decision.
 
 The engine, the file import and the six-step guide are shared with the [Stats Explorer](https://github.com/meador793/stats-explorer-mcp) app, so results match the app exactly.
 
@@ -79,6 +80,31 @@ Name the file in your message (or attach it); the assistant passes it to the too
 - *Make an HTML report of what we found and save it as findings.html.*
 
 The `analyze`, `explore_data` and `hypothesis_test` prompts (slash commands in VS Code and Claude) start the same flows.
+
+## Working with Jev (optional)
+
+When both Stats Explorer and a Jev MCP server are connected to Claude or Copilot, they split the work. **Stats Explorer computes** every number, and **Jev checks** two things before you see a result:
+
+- **The test plan:** is this the right test, are the hypotheses right, are these the right columns?
+- **The written conclusions:** does every number match, is "significant" stated correctly, are there claims of cause the analysis can't support?
+
+Stats Explorer also runs its own number and significance checks on every claim. Only claims that pass go into reports, and each report lists every check under **Independent checks**.
+
+| Mode | Set `STATS_EXPLORER_JEV` to | Who calls Jev | Good for |
+|---|---|---|---|
+| Cooperate | `cooperate` | The assistant, through your Jev MCP server, using packets Stats Explorer prepares | Working in Claude Code or Copilot without any orchestration tool |
+| Enforce | `enforce` (plus `TYPESAFE_API_KEY`) | Stats Explorer, directly from the Jev API | Checks the assistant can't skip or alter |
+| Orchestrated | `orchestrated` (plus `STATS_EXPLORER_APPROVAL_SECRET`) | Your orchestrator (LangGraph, Temporal, Step Functions and so on), which signs each decision | Production pipelines with audit logs |
+
+Quick start with Claude Code (no orchestrator):
+
+```bash
+claude mcp add -s user jev -e TYPESAFE_API_KEY=YOUR_KEY -- npx -y @jkudish/jev-mcp
+claude mcp add -s user stats-explorer -e STATS_EXPLORER_JEV=cooperate -e STATS_EXPLORER_CONFIRM_VIA=chat -- npx -y stats-explorer-mcp
+npx -y stats-explorer-mcp init-jev     # adds routing rules to CLAUDE.md and .github/copilot-instructions.md
+```
+
+Any Jev MCP server works (`@jkudish/jev-mcp`, `jev-mcp`, `typesafe-mcp`, …): the packets come in the shapes their tools take. In VS Code, set **Stats Explorer › Jev: Mode**. See **[docs/JEV.md](docs/JEV.md)** for every mode and setting, the signed-approval format (with JavaScript and Python), what is sent to Jev, and the runnable orchestrator example in `examples/orchestrator/`.
 
 ## How it works (default)
 
@@ -203,6 +229,7 @@ Excel files are always read whole (up to about 1.9 GB); export very large workbo
 | `STATS_EXPLORER_CONFIRM_VIA` | `auto` | `chat` asks for confirmations in the conversation even if the client claims to support forms (recommended for Claude Code) |
 | `STATS_EXPLORER_HIDE_LINK` | `0` | `1` removes the one-line app link at the end of results |
 | `STATS_EXPLORER_APP_URL` | | Changes that link |
+| `STATS_EXPLORER_JEV` | `off` | Jev checks: `cooperate`, `enforce` or `orchestrated`. See [docs/JEV.md](docs/JEV.md) for its other settings |
 
 ## Accuracy
 

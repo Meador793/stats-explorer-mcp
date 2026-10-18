@@ -1,7 +1,7 @@
 {
   "name": "stats-explorer-mcp",
-  "version": "1.3.1",
-  "description": "Verified statistics for AI agents with a guided workflow: hypothesis tests that follow six analyst steps, user-confirmed column and chart choices, charts and reports. CSV, TSV, Excel, Parquet. Runs locally.",
+  "version": "1.4.0",
+  "description": "Verified statistics for AI agents with a guided workflow: hypothesis tests that follow six analyst steps, user-confirmed choices, charts and reports, optionally checked by Jev. CSV, TSV, Excel, Parquet of any size. Runs locally.",
   "mcpName": "io.github.meador793/stats-explorer-mcp",
   "type": "module",
   "bin": {
@@ -10,10 +10,13 @@
   "main": "src/server.js",
   "exports": {
     ".": "./src/server.js",
-    "./tools": "./src/tools.js"
+    "./tools": "./src/tools.js",
+    "./jev": "./src/jev/index.js"
   },
   "files": [
     "src",
+    "examples",
+    "docs/JEV.md",
     "README.md",
     "LICENSE"
   ],
@@ -36,12 +39,15 @@
     "elicitation",
     "excel",
     "hypothesis-testing",
+    "jev",
     "mcp",
     "model-context-protocol",
     "parquet",
     "report",
     "statistics",
     "t-test",
+    "typesafe",
+    "verification",
     "visualization"
   ],
   "repository": {

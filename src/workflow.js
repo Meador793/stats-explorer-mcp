@@ -8,6 +8,7 @@ import * as BIG from './big/bigtools.js';
 import { accumulate } from './big/service.js';
 import { sSummarize, sMean, sSd, sVar, sQuantile, sOutliersZ, sOutliersIQR } from './big/sumstats.js';
 import { confirmSelection } from './confirm.js';
+import { planPacket } from './jev/checks.js';
 import { STEPS, MODES } from './session.js';
 import {
   summarize, mean, variance, stdDev, skewness, kurtosis, percentile, fmt, magnitude, normalityWarnings,
@@ -157,6 +158,22 @@ async function stateHypotheses(a, ctx) {
   // Make sure the confirmed choices actually work with the data before moving on.
   await extractData(a.test, args);
 
+  // Jev checkpoint: does this plan answer the user's question? (Only when Jev checks are on.)
+  let jevNotes = [];
+  if (ctx.jev?.uses('plan')) {
+    const columns = Object.entries(args).filter(([k]) => NUMERIC_ROLES.includes(k) || CATEGORY_ROLES.includes(k) || k === 'outcome_columns')
+      .flatMap(([role, x]) => (Array.isArray(x) ? x : [x]).map((name) => ({ role, name, type: table && table.headers.includes(name) ? (isNumericColumn(table, name) ? 'numeric' : 'categorical') : 'values' })));
+    for (const k of ['group1', 'group2', 'type', 'method']) if (args[k] != null) columns.push({ role: k, name: String(args[k]) });
+    const draft = { label: def.label, alternative: args.alternative || 'two-sided', alpha: args.alpha, h0: v.h0, h1: v.h1 };
+    const g = await ctx.jev.gate('plan', an.id, planPacket({ question: an.question, plan: draft, columns }), { analysisId: an.id });
+    if (!g.ok) {
+      // The user may have changed choices in a form: say exactly what to call again with.
+      const retry = { test: a.test, test_arguments: Object.fromEntries(Object.entries(args).filter(([k]) => !['alpha', 'alternative', 'confidence'].includes(k))), h0: v.h0, h1: v.h1, alternative: args.alternative || 'two-sided', alpha: args.alpha, ...(args.confidence ? { confidence: args.confidence } : {}) };
+      return { ...g.result, data: { ...g.result.data, retry_with: retry }, summary: [...g.result.summary, c.changedByUser ? 'The user changed choices in the form: call state_hypotheses again with retry_with (in the structured result).' : ''].filter(Boolean) };
+    }
+    jevNotes = [...(g.verdict ? [`Jev check of the plan: ${g.verdict.overall}${g.verdict.source === 'override' ? ' (accepted by the user)' : ''}.`] : []), ...g.notes];
+  }
+
   const first = an.steps[0].status !== 'pending';
   session.resetStepsFrom(1);
   an.plan = { test: a.test, label: def.label, args, h0: v.h0, h1: v.h1, alpha: args.alpha, alternative: args.alternative || 'two-sided', file: args.file || null };
@@ -168,6 +185,7 @@ async function stateHypotheses(a, ctx) {
       `Test: ${def.label}${args.alternative && def.directional ? ` (${args.alternative})` : ''}, α = ${args.alpha}.`,
       `H₀: ${v.h0}`, `H₁: ${v.h1}`,
       ...(c.changedByUser ? ['The user changed some choices in the confirmation form; the values above are the confirmed ones.'] : []),
+      ...jevNotes,
       'Next: step 2, check_assumptions.',
     ],
   };

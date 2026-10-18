@@ -12,6 +12,8 @@ import { linearRegression } from './engine/regression.js';
 import { histogram, boxPlot, scatter, bar, line, pie, CHART_CSS } from './charts.js';
 import { fmt, formatPEq, mean } from './stats.js';
 import { APP_NAME, VERSION } from './brand.js';
+import { SOURCE_LABEL, CHECKPOINT_LABEL } from './jev/gate.js';
+import { basename } from 'node:path';
 
 const token = z.string().optional().describe('Only after the user has confirmed the proposed choices: the confirmation_token from the previous response.');
 export const CHART_TYPES = ['histogram', 'box_plot', 'scatter', 'bar', 'line', 'pie'];
@@ -261,6 +263,35 @@ async function buildReport(a, ctx) {
     if (r.kind === 'hypothesis_test') return { id: r.id, title: `Hypothesis test: ${r.title}`, source: src, story: hypothesisStory(r, session) };
     return { id: r.id, title: r.title, source: src, svg: r.svg, ...genericSection(r) };
   });
+  let checked = null;
+  if (ctx.jev?.enabled) {
+    // Conclusions the AI wrote, included only if they passed check_conclusions.
+    const packets = [];
+    if (a.conclusions_check) {
+      const v = ctx.jev.verdicts.get(a.conclusions_check);
+      if (!v || v.checkpoint !== 'conclusions') throw new UserError(`conclusions_check must be the packet_id of a finished check_conclusions call (got "${a.conclusions_check}").`);
+      const ok = v.items.filter((i) => i.outcome === 'pass');
+      if (!ok.length) throw new UserError('None of the checked claims passed, so there are no conclusions to include. Revise them and run check_conclusions again.');
+      packets.push(v.packet_id);
+      checked = { total: v.items.length, passed: ok.length };
+      blocks.unshift({ id: 'conclusions', title: 'Key findings', story: [['Checked against the computed results', ok.map((i) => `- ${i.claim}`)]], lines: [`Written by the AI assistant and checked before inclusion (${SOURCE_LABEL[v.source] || v.source}). ${ok.length < v.items.length ? `${v.items.length - ok.length} claim(s) that did not pass were left out.` : 'All claims passed.'}`] });
+    }
+    const files = chosen.map((r) => r.selection?.file).filter(Boolean).map((f) => basename(String(f)));
+    const verdicts = ctx.jev.forReport({ analysisIds: [...new Set(chosen.map((r) => r.analysisId).filter(Boolean))], files: [], conclusionPackets: packets })
+      .concat([...ctx.jev.verdicts.values()].filter((v) => v.checkpoint === 'data' && files.includes(basename(String(v.subject)))));
+    if (verdicts.length) {
+      blocks.push({
+        id: 'checks', title: 'Independent checks',
+        story: verdicts.map((v) => [`${CHECKPOINT_LABEL[v.checkpoint]}: ${v.overall}`, [
+          `${SOURCE_LABEL[v.source] || v.source}${v.model ? ` (${v.model})` : ''}, ${v.at.slice(0, 16).replace('T', ' ')} UTC.${v.note ? ` ${v.source === 'override' ? 'Reason' : 'Note'}: ${v.note}` : ''}`,
+          ...(v.checkpoint === 'conclusions'
+            ? [`- ${v.items.filter((i) => i.outcome === 'pass').length} of ${v.items.length} claims passed and appear under Key findings; the others were left out.`]
+            : v.items).map((i) => (typeof i === 'string' ? i : `- ${i.outcome === 'pass' ? 'Passed' : i.outcome === 'review' ? 'Flagged for review' : 'Failed'}: ${i.claim ? `"${i.claim}"` : i.label}${i.probability_ok != null ? ` (${Math.round(i.probability_ok * 100)}% OK)` : ''}${i.issues.length ? `. ${i.issues.join(' ')}` : ''}`)),
+        ]]),
+        lines: ['Jev (TypeSafe) judges choices and wording; it does not compute statistics. Every number in this report comes from Stats Explorer.'],
+      });
+    }
+  }
   const doc = render(blocks, { title: c.values.title, format, embedCharts: !!a.save_to });
   let saved = null;
   if (a.save_to) {
@@ -269,7 +300,7 @@ async function buildReport(a, ctx) {
   }
   const hasHyp = chosen.some((r) => r.kind === 'hypothesis_test');
   return {
-    data: { included: chosen.map((r) => r.id), format, ...(saved ? { saved_to: saved } : { report: doc }), hypothesis_section: hasHyp },
+    data: { included: chosen.map((r) => r.id), format, ...(saved ? { saved_to: saved } : { report: doc }), hypothesis_section: hasHyp, ...(checked ? { conclusions: checked } : {}) },
     summary: saved
       ? [`Report saved to ${saved} with ${chosen.length} section(s): ${chosen.map((r) => r.title).join('; ')}.`, hasHyp ? '' : 'No hypothesis section (none of the included results is a hypothesis test).'].filter(Boolean)
       : [`Report with ${chosen.length} section(s):`, '', format === 'markdown' ? doc : '(HTML report in structuredContent.report; pass save_to to write it to a file.)'],
@@ -299,3 +330,12 @@ export const buildReportTool = {
   annotations: { title: 'Build report', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   run: buildReport,
 };
+
+/** build_report with the Jev additions: checked conclusions and an "Independent checks" section. */
+export function withChecks(tool) {
+  return {
+    ...tool,
+    description: `${tool.description} When Jev checks are on, pass conclusions_check (the packet_id from check_conclusions) to open the report with your findings that passed; an "Independent checks" section lists every Jev decision for the included analyses.`,
+    inputSchema: { ...tool.inputSchema, conclusions_check: z.string().optional().describe('packet_id of a check_conclusions call whose passed claims open the report.') },
+  };
+}

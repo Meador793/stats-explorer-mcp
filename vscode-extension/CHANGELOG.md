@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.4.0
+
+- **Works with Jev** (TypeSafe's judgment model). Jev checks the test plan and the AI's written conclusions against the computed results. Stats Explorer also checks every claim itself: the numbers, significance, and causal wording. Only claims that pass go into reports, and each report lists every check.
+- New setting **Jev: Mode**:
+  - `cooperate`: no orchestrator; Copilot or Claude calls your Jev MCP server.
+  - `enforce`: Stats Explorer calls the Jev API itself.
+- New settings for checkpoints, thresholds and an audit log.
+- New commands:
+  - **Set TypeSafe API Key**, which keeps the key in secret storage.
+  - **Add Jev Routing Instructions to This Workspace**.
+  - **Copy Setup Commands for Claude Code (with Jev)**.
+
 ## 1.3.1
 
 - Step-by-step setup for Copilot and Claude Code on this page; new command **Copy Setup Command for Claude Code**.

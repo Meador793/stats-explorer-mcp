@@ -1,0 +1,13 @@
+{
+  "question": "Do patients on Drug A score differently from Control patients?",
+  "file": "trial.csv",
+  "test": "t_test",
+  "test_arguments": { "type": "independent", "column": "score", "group_column": "group", "group1": "Control", "group2": "Drug A" },
+  "alternative": "two-sided",
+  "alpha": 0.05,
+  "claims": [
+    "The difference in score between Drug A and Control was {significance} (p = {p}).",
+    "Drug A causes higher scores."
+  ],
+  "report": "pipeline-report.html"
+}

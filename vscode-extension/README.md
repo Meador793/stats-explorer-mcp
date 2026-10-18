@@ -14,7 +14,7 @@ The tools can read a developer's CSV, TSV, Excel or Parquet files by column name
 * a plain-English interpretation,
 * warnings when an assumption looks shaky.
 
-Every calculation is checked against SciPy and statsmodels in an automated test suite. Everything runs on your machine: no accounts, no uploads, no network calls.
+Every calculation is checked against SciPy and statsmodels in an automated test suite. Everything runs on your machine: no accounts, no uploads, no network calls (unless you turn on Jev's enforce mode).
 
 ## An honest write-up for every hypothesis test
 
@@ -62,6 +62,23 @@ Before anything runs, VS Code shows you the columns, groups, chart type or repor
 3. Start a **new** Claude session (Command Palette → **Developer: Reload Window**, then New session). Type `/mcp` to check that **stats-explorer** is connected.
 
 Claude asks you to confirm choices in the chat; reply to approve or change them.
+
+## New in 1.4: checked by Jev
+
+Connect **Jev** (TypeSafe's fast judgment model) next to Stats Explorer. Stats Explorer computes every number, and Jev independently checks two things:
+
+- **The test plan:** the right test, the right hypotheses, the right columns.
+- **The written conclusions:** do they match the results?
+
+Stats Explorer also runs its own checks on every claim: are the numbers in the results, does "significant" match the p-value, is there causal wording? Only claims that pass go into your report, and the report lists every check.
+
+Set **Stats Explorer › Jev: Mode**:
+
+- **cooperate** needs no orchestrator. Copilot or Claude calls your Jev MCP server with a ready-made packet, then records Jev's answer. Add a Jev server in `.vscode/mcp.json` (for example `npx -y @jkudish/jev-mcp` with your `TYPESAFE_API_KEY`).
+- **enforce**: Stats Explorer calls the Jev API itself, so the AI can't skip or alter the check. Run **Stats Explorer: Set TypeSafe API Key**; the key is kept in VS Code's secret storage.
+- **orchestrated** (outside VS Code) is for production pipelines. Your orchestrator signs each decision, and unsigned approvals are refused. See the repository's `docs/JEV.md` and the example in `examples/orchestrator`.
+
+Then run **Stats Explorer: Add Jev Routing Instructions to This Workspace**. It writes the order of use into `.github/copilot-instructions.md` and `CLAUDE.md`. For Claude Code, **Stats Explorer: Copy Setup Commands for Claude Code (with Jev)** copies everything you need.
 
 ## Ask it anything about your data
 
@@ -123,6 +140,11 @@ Files of any size work. Above 512 MB, CSV, TSV and Parquet files are read in par
 | `statsExplorer.largeFiles.saveColumns` | ask | Keep columns read from large files for fast follow-ups |
 | `statsExplorer.largeFiles.cacheFolder` | temp folder | Where kept columns go |
 | `statsExplorer.maxFileMB` | 0 (no limit) | Refuse files larger than this |
+| `statsExplorer.jev.mode` | off | `cooperate` or `enforce`: Jev checks the plan and conclusions |
+| `statsExplorer.jev.checkpoints` | plan, conclusions | Add `data` to screen data files for text aimed at an AI (sends text samples to Jev) |
+| `statsExplorer.jev.waitForJev` | on | Cooperate mode: checkpoints wait for Jev's answer |
+| `statsExplorer.jev.passAt` / `failBelow` | 0.8 / 0.5 | Decision thresholds |
+| `statsExplorer.jev.auditLog` | none | JSON Lines file recording every check |
 
 ## Use it in other editors
 

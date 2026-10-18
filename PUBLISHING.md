@@ -36,7 +36,7 @@ node scripts/set-identity.mjs --github YOUR_GITHUB_USERNAME --publisher YOUR_PUB
 npm test
 ```
 
-`npm test` should report **69 passing**. Then search the folder for `YOUR_` to confirm nothing is left (ignore this file and `scripts/set-identity.mjs`, which mention the placeholders on purpose).
+`npm test` should report **116 passing**. Then search the folder for `YOUR_` to confirm nothing is left (ignore this file and `scripts/set-identity.mjs`, which mention the placeholders on purpose).
 
 ### 0.3 Put the code on GitHub
 

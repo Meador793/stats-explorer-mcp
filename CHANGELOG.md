@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.4.0
+
+**Works with Jev.** Stats Explorer computes; Jev (TypeSafe's fast judgment model) independently checks the AI's choices and wording. Off unless `STATS_EXPLORER_JEV` is set; nothing changes otherwise.
+
+- **Checkpoints.**
+  - `plan`: in step 1, does the test fit the question, do H₀/H₁ state it, are these the right columns?
+  - `conclusions`: the new `check_conclusions` tool checks the assistant's finding sentences before they are presented.
+  - `data` (opt-in): screens column names and text values for instructions aimed at an AI.
+- **Stats Explorer's own claim checks**, on every claim, with or without Jev:
+  - every number in a claim must appear in the computed results (allowing for rounding);
+  - "significant" / "not significant" must match p and α;
+  - causal and "proves" wording is flagged.
+
+  These can lower Jev's outcome but never raise it.
+- **Three modes.**
+  - `cooperate`: no orchestrator. The assistant calls your Jev MCP server with a ready-made packet (shaped for `jev_noul`, `jev_verify`, `jev_screen`, `check`, `verify` and `evaluate`) and records the answer with the new `record_verification` tool.
+  - `enforce`: Stats Explorer calls `POST /v1/systemone` itself and fails closed.
+  - `orchestrated`: only HMAC-signed, single-use, expiring decisions from the orchestrator count; `stats-explorer-mcp/jev` exports `signApproval`, and there is a Python snippet.
+- **Fixed thresholds** (pass ≥ 0.8, fail < 0.5) turn probabilities into pass / review / fail, so the same answer always gives the same outcome. The user can accept a flagged check with a reason, which is recorded (not in orchestrated mode).
+- **Reports.**
+  - `build_report` gains `conclusions_check`: the report opens with the claims that passed.
+  - Reports also get an **Independent checks** section, saying who made each decision.
+- **Audit log.** `STATS_EXPLORER_AUDIT_LOG` writes one JSON line per decision. It never contains data values or secrets.
+- **Project routing rules.** `npx stats-explorer-mcp init-jev` writes them for Claude Code (`CLAUDE.md`) and Copilot (`.github/copilot-instructions.md`); there is also a new `analyze_with_jev` prompt.
+- **Orchestrator example.** `examples/orchestrator/pipeline.mjs` runs a whole job with signed checks; `--dry-run` needs no key.
+- **VS Code.**
+  - New settings: Jev mode, checkpoints, wait for Jev, audit log.
+  - **Set TypeSafe API Key** stores the key in secret storage.
+  - **Add Jev Routing Instructions to This Workspace** and **Copy Setup Commands for Claude Code (with Jev)**.
+
 ## 1.3.1
 
 - **Easier setup.** The README and Marketplace page have step-by-step setup for GitHub Copilot in VS Code (install, Agent mode, tools icon) and for Claude Code (one command, new session, `/mcp`), plus Claude Desktop / Cursor config. New VS Code command **Stats Explorer: Copy Setup Command for Claude Code**.
