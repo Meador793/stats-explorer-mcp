@@ -4,6 +4,10 @@
 import { z } from 'zod';
 import { computeTest } from './engine/hypothesisTests.js';
 import { proportionCI, tTestPower, cohensD } from './engine/statsUtils.js';
+import { tukeyHSD, tukeyLines } from './posthoc.js';
+import { abReadout, abPlan } from './abtest.js';
+import { accumulate } from './big/service.js';
+import { sMean, sVar } from './big/sumstats.js';
 import { linearRegression } from './engine/regression.js';
 import { loadTable, largeFilePath, numericColumn, requireColumn, isMissing, toNumber, categoryKey, forEachCategory, UserError, assertFlatRows } from './data.js';
 import * as BIG from './big/bigtools.js';
@@ -238,6 +242,13 @@ async function zTest(a) {
 
 // ------------------------------------------------------------------ ANOVA
 
+/** One sentence for the interpretation: which groups differ (Tukey). */
+export function postHocSentence(t) {
+  if (!t) return '';
+  if (!t.significant_pairs.length) return ' Tukey HSD finds no pair of groups that differs significantly.';
+  return ` Tukey HSD: ${t.significant_pairs.map((s) => `${s.higher} > ${s.lower}`).join('; ')}.`;
+}
+
 async function anova(a) {
   if (a.file) { const big = await largeFilePath(a.file); if (big) return BIG.anova(a, big); }
   let groups; // [{name, values}]
@@ -287,8 +298,8 @@ async function anova(a) {
     }
   }
 
-  const names = groups.map((g) => g.name);
   const v = verdict(p, a.alpha, `equal means in all ${groups.length} groups`, 'at least one group mean being different');
+  const postHoc = a.post_hoc !== 'none' && groups.length >= 3 ? tukeyHSD(groups.map((g) => ({ name: g.name, n: g.values.length, mean: mean(g.values) })), SSW / dfW, dfW, a.alpha) : null;
   return {
     data: {
       test: 'One-way ANOVA', alpha: a.alpha,
@@ -297,7 +308,8 @@ async function anova(a) {
       groups: groups.map((g) => ({ name: g.name, ...summarize(g.values, a.confidence) })),
       anova_table: { ss_between: SSB, ss_within: SSW, ms_between: SSB / dfB, ms_within: SSW / dfW, total_n: N },
       ...(pairwise && { pairwise_comparisons: { method: "Welch t-tests, Bonferroni-adjusted", comparisons: pairwise } }),
-      interpretation: v.text + (v.significant && !a.pairwise ? ' Set pairwise: true to see which groups differ.' : ''),
+      ...(postHoc && { post_hoc: postHoc }),
+      interpretation: v.text + postHocSentence(postHoc),
       warnings,
     },
     summary: [
@@ -306,6 +318,7 @@ async function anova(a) {
       `Means: ${groups.map((g) => `${g.name} = ${fmt(mean(g.values))}`).join(', ')}`,
       `η² = ${fmt(eta2, 3)} (${magnitude.eta2(eta2)}), ω² = ${fmt(omega2, 3)}`,
       ...(pairwise ? pairwise.map((c) => `  ${c.groups[0]} vs ${c.groups[1]}: diff ${fmt(c.mean_difference)}, Bonferroni p = ${fmt(c.p_bonferroni)}${c.significant ? ' *' : ''}`) : []),
+      ...tukeyLines(postHoc, v.significant),
       v.text,
     ],
   };
@@ -868,16 +881,133 @@ async function chooseTest(a) {
     ? pick('manova', {}, 'Several numeric outcomes compared across groups at once.', ['Multivariate normality', 'Equal covariance matrices'])
     : a.has_covariate
       ? pick('ancova', {}, 'Compare groups on one outcome while adjusting for a numeric covariate.', ['Same covariate slope in every group', 'Residuals roughly normal'])
-      : pick('anova', { pairwise: true }, 'One numeric outcome across 3 or more groups.', ['Independent groups', 'Similar variances', 'Roughly normal within groups']);
+      : pick('anova', {}, 'One numeric outcome across 3 or more groups; the Tukey HSD post-hoc test shows which groups differ.', ['Independent groups', 'Similar variances', 'Roughly normal within groups']);
   else if (g === 'relationship_two_numeric') rec = pick('correlation', { method: a.outliers_or_ranks ? 'spearman' : 'pearson' },
     a.outliers_or_ranks ? 'Monotonic relationship, robust to outliers and ranks.' : 'Linear relationship between two numeric variables.', ['Pairs independent']);
   else if (g === 'association_two_categorical') rec = pick('chi_square', { type: 'independence' }, "Whether two categorical variables are related. For a 2×2 table with small counts, use fisher_exact.", ['Expected counts ≥ 5 in most cells']);
   else if (g === 'counts_vs_expected_distribution') rec = pick('chi_square', { type: 'goodness_of_fit' }, 'Whether category counts match expected proportions.', ['Expected counts ≥ 5']);
+  else if (g === 'ab_test') rec = pick('ab_test', { metric: a.outcome_is_numeric ? 'continuous' : 'conversion' }, a.outcome_is_numeric ? 'An experiment comparing variants on a numeric metric (revenue, time): Welch t-test per variant against the control, with lift intervals, an SRM check and Bayesian probabilities.' : 'An experiment comparing conversion rates of variants: two-proportion z-test per variant against the control, with lift intervals, an SRM check and Bayesian probabilities.', ['Visitors randomly assigned', 'Each visitor counted once', 'Sample size fixed in advance (no stopping when p < α)']);
+  else if (g === 'plan_ab_test') rec = pick('ab_test_plan', { metric: a.outcome_is_numeric ? 'continuous' : 'conversion' }, 'Visitors needed per variant to detect the smallest lift that matters.', []);
   else if (g === 'plan_sample_size') rec = pick('power_analysis', {}, 'Choose a sample size before collecting data.', []);
   else rec = pick('describe', {}, 'Start by summarising the data.', []);
   if (a.has_covariate && g === 'compare_two_groups' && !a.paired) rec = pick('ancova', {}, 'Two groups compared on one outcome while adjusting for a numeric covariate.', ['Same covariate slope in every group']);
   return { data: rec, summary: [`Recommended: ${rec.tool} ${Object.keys(rec.suggested_arguments).length ? JSON.stringify(rec.suggested_arguments) : ''}`.trim(), rec.why, ...(rec.assumptions.length ? [`Assumptions: ${rec.assumptions.join('; ')}`] : [])] };
 }
+
+
+// ------------------------------------------------------------------ A/B tests
+
+const SUCCESS_WORDS = /^(1|1\.0|true|yes|y|t|converted|conversion|success|succeeded|purchased|purchase|clicked|signed up|won)$/i;
+
+/** Which value of the outcome column counts as a conversion. */
+function successKey(labels, given, column) {
+  if (given != null) {
+    const k = categoryKey(given);
+    if (!labels.includes(k)) throw new UserError(`success_value "${given}" does not occur in ${column}. Values: ${labels.slice(0, 20).join(', ')}`);
+    return k;
+  }
+  const hits = labels.filter((l) => SUCCESS_WORDS.test(l));
+  if (labels.length <= 2 && hits.length === 1) return hits[0];
+  throw new UserError(`Can't tell which value of "${column}" means converted (values: ${labels.slice(0, 20).join(', ')}). Pass success_value, or use metric "continuous" for a numeric measure such as revenue.`);
+}
+
+/** Per-variant summaries from a file (in memory or streamed), for metric conversion or continuous. */
+export async function abVariantsFromFile(a) {
+  if (!a.variant_column || !a.outcome_column) throw new UserError('An A/B test from a file needs variant_column (the experiment arm) and outcome_column (converted yes/no, or a numeric value such as revenue).');
+  const big = await largeFilePath(a.file);
+  let variants;
+  if (a.metric === 'conversion') {
+    let ct;
+    if (big) ct = await BIG.crosstabOf(big, a.variant_column, a.outcome_column, [{ type: 'missing', cols: [a.variant_column, a.outcome_column] }]);
+    else ct = crosstab(await loadTable(a.file), a.variant_column, a.outcome_column);
+    const succ = successKey(ct.cl, a.success_value, a.outcome_column);
+    const j = ct.cl.indexOf(succ);
+    variants = ct.rl.map((name, i) => ({ name, n: ct.m[i].reduce((x, y) => x + y, 0), conversions: ct.m[i][j] }));
+    if (ct.cl.length > 2) throw new UserError(`"${a.outcome_column}" has ${ct.cl.length} different values; a conversion metric needs exactly two (converted / not). Values: ${ct.cl.slice(0, 20).join(', ')}`);
+  } else if (big) {
+    let res;
+    try { res = await accumulate(big, [{ type: 'grouped', col: a.outcome_column, by: a.variant_column }], { prefetch: [{ type: 'missing', cols: [a.variant_column, a.outcome_column] }] }); } catch (e) { throw e instanceof UserError ? e : new UserError(e?.message || String(e)); }
+    const st = res.states[0];
+    BIG.checkBad(st);
+    variants = [...st.groups.entries()].map(([name, S]) => ({ name, n: S.n, mean: sMean(S), sd: Math.sqrt(sVar(S)) }));
+  } else {
+    const g = groupValues(await loadTable(a.file), a.outcome_column, a.variant_column);
+    variants = [...g.entries()].map(([name, v]) => ({ name, n: v.length, mean: mean(v), sd: Math.sqrt(variance(v)) }));
+  }
+  if (a.variants_to_include?.length) {
+    const keep = a.variants_to_include.map(String);
+    for (const k of keep) if (!variants.some((v) => v.name === k)) throw new UserError(`Variant "${k}" not found in ${a.variant_column}. Variants: ${variants.map((v) => v.name).join(', ')}`);
+    variants = keep.map((k) => variants.find((v) => v.name === k));
+  }
+  if (variants.length > 26) throw new UserError(`"${a.variant_column}" has ${variants.length} values; is it really the experiment arm?`);
+  if (!a.variants_to_include?.length) variants.sort((x, y) => x.name.localeCompare(y.name, 'en', { numeric: true }));
+  return { variants, big: !!big };
+}
+
+/** Optional per-segment readouts (in-memory files only). */
+async function abSegments(a, control) {
+  const table = await loadTable(a.file);
+  requireColumn(table, a.segment_column, 'segment column'); requireColumn(table, a.variant_column, 'variant column'); requireColumn(table, a.outcome_column);
+  const sc = table.col(a.segment_column), vc = table.col(a.variant_column), oc = table.col(a.outcome_column);
+  let succ = null;
+  if (a.metric === 'conversion') succ = successKey(crosstab(table, a.variant_column, a.outcome_column).cl, a.success_value, a.outcome_column);
+  const segs = new Map();
+  for (let i = 0; i < table.rowCount; i++) {
+    const s = sc.get(i), v = vc.get(i), o = oc.get(i);
+    if (isMissing(s) || isMissing(v) || isMissing(o)) continue;
+    const sk = categoryKey(s), vk = categoryKey(v);
+    if (a.variants_to_include?.length && !a.variants_to_include.map(String).includes(vk)) continue;
+    if (!segs.has(sk)) segs.set(sk, new Map());
+    const m = segs.get(sk);
+    if (!m.has(vk)) m.set(vk, { name: vk, n: 0, conversions: 0, values: [] });
+    const r = m.get(vk);
+    r.n++;
+    if (succ !== null) { if (categoryKey(o) === succ) r.conversions++; } else { const x = toNumber(o); if (x !== null) r.values.push(x); else r.n--; }
+  }
+  if (segs.size > 30) throw new UserError(`"${a.segment_column}" has ${segs.size} values; pick a segment column with at most 30.`);
+  const out = [];
+  for (const [seg, m] of segs) {
+    const vs = [...m.values()].map((r) => (succ !== null ? { name: r.name, n: r.n, conversions: r.conversions } : { name: r.name, n: r.values.length, mean: mean(r.values), sd: Math.sqrt(variance(r.values)) }));
+    if (!vs.some((v) => v.name === control) || vs.length < 2 || vs.some((v) => v.n < 2)) { out.push({ segment: seg, skipped: 'too few rows in some variant' }); continue; }
+    const r = abReadout({ ...a, variants: vs, control, bayesian: false, post_hoc: 'none', expected_split: undefined });
+    out.push({ segment: seg, n: vs.reduce((x, v) => x + v.n, 0), comparisons: r.data.comparisons.map((c) => ({ variant: c.variant, absolute_lift: c.absolute_lift, absolute_lift_ci: c.absolute_lift_ci, relative_lift: c.relative_lift, p_value: c.p_value, p_adjusted: c.p_adjusted, significant: c.significant })) });
+  }
+  return out;
+}
+
+/** Inline variants -> summaries. */
+export function abInlineVariants(a) {
+  return (a.variants || []).map((v, i) => {
+    const name = v.name ?? String.fromCharCode(65 + i);
+    if (v.values) { checkSample(v.values, `Variant "${name}"`); return { name, n: v.values.length, mean: mean(v.values), sd: Math.sqrt(variance(v.values)) }; }
+    if (a.metric === 'conversion') return { name, n: v.visitors ?? v.n, conversions: v.conversions };
+    return { name, n: v.n, mean: v.mean, sd: v.sd };
+  });
+}
+
+const CONTROL_NAMES = /^(control|ctrl|baseline|original|default|old|current|a|v0|0)$/i;
+/** Default control: a variant called control / baseline / original / A, else the first one. */
+export const defaultControl = (variants) => (variants.find((v) => CONTROL_NAMES.test(String(v.name).trim())) || variants[0])?.name;
+
+async function abTest(a) {
+  let variants, big = false;
+  if (a.file) ({ variants, big } = await abVariantsFromFile(a));
+  else variants = abInlineVariants(a);
+  const control = a.control != null ? String(a.control) : defaultControl(variants);
+  const res = abReadout({ ...a, variants, control });
+  if (a.segment_column) {
+    if (!a.file || big) throw new UserError('segment_column needs a data file small enough to load into memory; for a very large file, filter it per segment first.');
+    const segments = await abSegments(a, control);
+    res.data.segments = segments;
+    res.data.notes.push(`Segment results (${segments.length} segments) are exploratory: with many segments some will look significant by chance, and the overall result is the one to act on.`);
+    const flips = segments.filter((sg) => sg.comparisons?.some((c) => c.significant && Math.sign(c.absolute_lift) !== Math.sign(res.data.comparisons.find((x) => x.variant === c.variant)?.absolute_lift)));
+    if (flips.length) res.data.warnings.push(`In ${flips.map((f) => f.segment).join(', ')} the lift goes the opposite way to the overall result (possible Simpson's paradox or a real segment difference).`);
+    res.summary.push(`Segments by ${a.segment_column}:`, ...segments.map((sg) => (sg.skipped ? `  ${sg.segment}: skipped (${sg.skipped})` : `  ${sg.segment} (n = ${sg.n}): ${sg.comparisons.map((c) => `${c.variant} ${a.metric === 'conversion' ? `${c.absolute_lift >= 0 ? '+' : ''}${(c.absolute_lift * 100).toFixed(2)} pp` : fmt(c.absolute_lift)}, p = ${fmt(c.p_value)}${c.significant ? ' *' : ''}`).join('; ')}`)));
+  }
+  return res;
+}
+
+async function abTestPlan(a) { return abPlan(a); }
 
 // ------------------------------------------------------------------ tool table
 
@@ -888,12 +1018,13 @@ export const TOOLS = [
     name: 'choose_test', title: 'Choose a statistical test',
     description: 'Recommends which test tool to run for a research question, with the assumptions to check. Call this first when unsure.',
     inputSchema: {
-      goal: z.enum(['compare_mean_to_value', 'compare_proportion_to_value', 'compare_two_groups', 'compare_three_plus_groups', 'relationship_two_numeric', 'association_two_categorical', 'counts_vs_expected_distribution', 'plan_sample_size', 'describe_data']),
+      goal: z.enum(['compare_mean_to_value', 'compare_proportion_to_value', 'compare_two_groups', 'compare_three_plus_groups', 'relationship_two_numeric', 'association_two_categorical', 'counts_vs_expected_distribution', 'ab_test', 'plan_ab_test', 'plan_sample_size', 'describe_data']).describe('ab_test: compare variants of an experiment (A/B/n) against a control; plan_ab_test: sample size for one.'),
       paired: z.boolean().default(false).describe('Same subjects measured twice / matched pairs.'),
       has_covariate: z.boolean().default(false).describe('A numeric variable to adjust for.'),
       multiple_outcomes: z.boolean().default(false).describe('Several numeric outcomes analysed together.'),
       known_population_sd: z.boolean().default(false),
       outliers_or_ranks: z.boolean().default(false).describe('Data are ranks, ordinal, or have strong outliers.'),
+      outcome_is_numeric: z.boolean().default(false).describe('A/B tests: the metric is a number per visitor (revenue, time) rather than converted yes/no.'),
     },
     run: chooseTest,
   },
@@ -937,14 +1068,56 @@ export const TOOLS = [
   },
   {
     name: 'anova', title: 'One-way ANOVA',
-    description: 'One-way ANOVA across 2+ groups with eta²/omega², group summaries and optional Bonferroni-adjusted pairwise Welch t-tests. Inline groups [{name, values}] or file + column + group_column.',
+    description: 'One-way ANOVA across 2+ groups with eta²/omega², group summaries and, for 3+ groups, a Tukey HSD post-hoc test that highlights which groups differ (letters, best group). Optional Bonferroni-adjusted pairwise Welch t-tests. Inline groups [{name, values}] or file + column + group_column.',
     inputSchema: {
       groups: z.array(z.object({ name: z.string().optional(), values: numArray })).optional(),
       file, column: z.string().optional(), group_column: z.string().optional(),
       groups_to_include: z.array(z.string()).optional().describe('Subset of group_column categories to compare.'),
-      pairwise: z.boolean().default(false), alpha, confidence,
+      pairwise: z.boolean().default(false).describe('Also run Bonferroni-adjusted Welch t-tests between every pair.'),
+      post_hoc: z.enum(['tukey', 'none']).default('tukey').describe('Tukey HSD post-hoc test for 3+ groups (default): adjusted p-values, simultaneous intervals and the groups that differ.'),
+      alpha, confidence,
     },
     run: anova,
+  },
+  {
+    name: 'ab_test', title: 'A/B test',
+    description: 'A/B or A/B/n experiment readout, each variant against a control. metric "conversion" (converted yes/no: two-proportion z-test, Fisher\'s exact when counts are small) or "continuous" (revenue, time, order value: Welch t-test). Returns per-variant rates/means with intervals, absolute and relative lift with intervals, p-values adjusted for several variants (Holm by default), a sample-ratio-mismatch check, an omnibus test for 3+ variants (chi-square, or ANOVA with Tukey HSD), Bayesian probability to beat the control / be best and expected loss, the minimum detectable effect, an optional per-segment breakdown, and a decision. Inline summaries (variants: [{name, visitors, conversions}] or [{name, n, mean, sd}] or [{name, values}]) or file + variant_column + outcome_column.',
+    inputSchema: {
+      metric: z.enum(['conversion', 'continuous']).describe('conversion: a yes/no outcome per visitor. continuous: a numeric value per visitor (revenue, time on page).'),
+      variants: z.array(z.object({
+        name: z.string().optional(), visitors: z.number().int().optional(), conversions: z.number().int().optional(),
+        n: z.number().int().optional(), mean: num.optional(), sd: num.optional(), values: numArray.optional(),
+      })).optional().describe('Inline per-variant numbers, control first unless control is given.'),
+      file, variant_column: z.string().optional().describe('Column with the experiment arm (A, B, control, treatment…).'),
+      outcome_column: z.string().optional().describe('Conversion indicator (1/0, yes/no, true/false) or the numeric metric.'),
+      success_value: z.union([z.string(), z.number(), z.boolean()]).optional().describe('Value of outcome_column that means converted, if not obvious.'),
+      variants_to_include: z.array(z.string()).optional(),
+      control: z.string().optional().describe('Name of the control / baseline variant. Default: the first variant.'),
+      expected_split: z.record(z.string(), z.number()).optional().describe('Planned traffic share per variant, e.g. {"A": 50, "B": 50}. Default: equal split.'),
+      correction: z.enum(['holm', 'bonferroni', 'none']).default('holm').describe('Multiple-comparison adjustment when 2+ variants are compared with the control.'),
+      mde: z.number().optional().describe('Smallest lift that matters to the business, as an absolute difference (0.005 = 0.5 percentage points); each lift is judged against it.'),
+      segment_column: z.string().optional().describe('Optional: also break the result down by this column (device, country…). Exploratory.'),
+      bayesian: z.boolean().default(true), prior: z.object({ alpha: z.number().positive(), beta: z.number().positive() }).optional().describe('Beta prior for conversion rates. Default Beta(1, 1).'),
+      srm_alpha: z.number().gt(0).lt(1).default(0.001).describe('Threshold for the sample ratio mismatch check. Default 0.001.'),
+      post_hoc: z.enum(['tukey', 'none']).default('tukey').describe('Tukey HSD between all variants (continuous metric, 3+ variants).'),
+      alternative, alpha, confidence,
+    },
+    run: abTest,
+  },
+  {
+    name: 'ab_test_plan', title: 'A/B test sample size',
+    description: 'Plan an A/B test: visitors needed per variant to detect the smallest lift that matters (mde) at a given power, and/or the smallest lift detectable with a given n_per_variant; days needed from daily_traffic. Conversion: baseline_rate. Continuous: baseline_sd (and baseline_mean for a relative mde).',
+    inputSchema: {
+      metric: z.enum(['conversion', 'continuous']),
+      baseline_rate: z.number().gt(0).lt(1).optional(), baseline_mean: num.optional(), baseline_sd: z.number().positive().optional(),
+      mde: z.number().optional().describe('Smallest lift that matters: absolute (0.005 = +0.5 percentage points) or relative with mde_type "relative" (0.1 = +10%).'),
+      mde_type: z.enum(['absolute', 'relative']).default('absolute'),
+      n_per_variant: z.number().int().positive().optional(), variants: z.number().int().min(2).max(26).default(2),
+      adjust_for_variants: z.boolean().default(true).describe('Split α across the comparisons with the control (Bonferroni) when there are 3+ variants.'),
+      power: z.number().gt(0).lt(1).default(0.8), daily_traffic: z.number().positive().optional(),
+      alternative, alpha,
+    },
+    run: abTestPlan,
   },
   {
     name: 'chi_square', title: 'Chi-square test',
@@ -1036,4 +1209,4 @@ export const TOOLS = [
 export const _internal = { ranks, pearson, crosstab };
 
 /** Implementations by name, for the guided workflow. */
-export const IMPL = { tTest, zTest, anova, chiSquare, fisherExact, binomialTest, correlation, ancova, manova, describe, confidenceInterval, powerAnalysis, inspectFile, chooseTest, groupSummary };
+export const IMPL = { abTest, abTestPlan, tTest, zTest, anova, chiSquare, fisherExact, binomialTest, correlation, ancova, manova, describe, confidenceInterval, powerAnalysis, inspectFile, chooseTest, groupSummary };

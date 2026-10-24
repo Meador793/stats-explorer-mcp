@@ -2,9 +2,10 @@
 
 ![Stats Explorer MCP: verified statistics your AI assistant calls instead of guessing numbers](https://raw.githubusercontent.com/meador793/stats-explorer-mcp/main/docs/images/hero.png)
 
-An [MCP](https://modelcontextprotocol.io) server with **16 statistics and analytics tools an AI assistant can call instead of guessing numbers, on data files of any size:**
+An [MCP](https://modelcontextprotocol.io) server with **18 statistics and analytics tools an AI assistant can call instead of guessing numbers, on data files of any size:**
 
-* **Tests:** t-tests, z-tests, ANOVA, ANCOVA, MANOVA, chi-square, Fisher's exact, binomial and correlation.
+* **Tests:** t-tests, z-tests, ANOVA (with a Tukey HSD post-hoc that names the groups that differ), ANCOVA, MANOVA, chi-square, Fisher's exact, binomial and correlation.
+* **A/B testing:** A/B and A/B/n readouts for conversion rates and revenue-type metrics (lift with intervals, sample ratio mismatch check, Holm-adjusted comparisons, Bayesian probability to beat the control, segment breakdowns), and sample-size planning.
 * **Analytics:** totals, averages and counts by category (top N), and "what drives X?" rankings across every column.
 * **Helpers:** descriptive stats, confidence intervals, power analysis, a "which test should I use?" tool, and a data-file inspector.
 
@@ -77,6 +78,9 @@ Name the file in your message (or attach it); the assistant passes it to the too
 - *What drives profit in sales.csv?* (find_relationships, then follow-ups)
 - *Show the distribution of order value and a box plot by segment.*
 - *Does average profit differ between the Consumer and Business segments? Is it significant?* (six-step hypothesis test)
+- *Did the new checkout page (variant B) increase conversion in experiment.csv? Break it down by device.* (ab_test)
+- *How many visitors do I need to detect a 10% lift on a 4% conversion rate, with 3,000 visitors a day?* (ab_test_plan)
+- *Does revenue differ between the three regions, and which ones?* (ANOVA + Tukey HSD)
 - *Make an HTML report of what we found and save it as findings.html.*
 
 The `analyze`, `explore_data` and `hypothesis_test` prompts (slash commands in VS Code and Claude) start the same flows.
@@ -166,14 +170,27 @@ A selection you've confirmed isn't asked about twice in the same session.
 | `confidence_interval` | CI for a mean (t) or a proportion (Wilson) |
 | `correlation` | Pearson or Spearman r with CI and fitted line, **without** a p-value (a significance test goes through step 1) |
 | `group_summary` | Totals, averages, medians, counts per category; top N (analytics) |
+| `ab_test_plan` | Visitors and days needed for an A/B test, or the smallest lift a given sample can detect |
 | `find_relationships` | Which columns relate most to a numeric outcome ("what drives X") |
 | `create_visualization`, `build_report` | Charts and reports |
 | `workflow_status` | Where the current analysis is, and the saved results |
 | `large_file_plan`, `job_status`, `cancel_job`, `manage_cache` | Very large files: read all or a sample, background jobs, kept columns |
 
-Tests available in step 1: t-test (one-sample, paired, Welch or Student), z-test (mean with known σ, proportion), one-way ANOVA (with Bonferroni pairwise comparisons), ANCOVA, MANOVA, chi-square (goodness of fit, independence), Fisher's exact, exact binomial and correlation.
+Tests available in step 1: t-test (one-sample, paired, Welch or Student), z-test (mean with known σ, proportion), one-way ANOVA (with a Tukey HSD post-hoc, plus optional Bonferroni Welch pairs), ANCOVA, MANOVA, chi-square (goodness of fit, independence), Fisher's exact, exact binomial, correlation and A/B test.
 
-The server also offers two prompts, `hypothesis_test` and `explore_data`, which clients such as VS Code show as slash commands.
+**ANOVA post-hoc (Tukey HSD).** Every one-way ANOVA with 3 or more groups includes Tukey's HSD (Tukey–Kramer for unequal group sizes), on in-memory and very large files alike: the difference, adjusted p-value and simultaneous interval for every pair, the significant pairs marked ★ ("B > A"), the best group and whether it beats all others, and a letter display (groups sharing a letter don't differ). Reports name the groups that differ.
+
+**A/B tests (`ab_test`).** From inline numbers or a file with a variant column and an outcome column:
+
+* `metric: "conversion"` (converted yes/no): two-proportion z-test, with Fisher's exact p when counts are small. `metric: "continuous"` (revenue, time, order value): Welch's t-test.
+* Every variant against the control: absolute lift (percentage points) and relative lift, each with an interval; Cohen's h or d.
+* **Sample ratio mismatch check** against the planned split (`expected_split`): a broken assignment blocks the decision.
+* A/B/n: an omnibus test (chi-square, or ANOVA with Tukey HSD) and Holm-adjusted p-values (or Bonferroni / none).
+* **Bayesian view:** probability each variant beats the control, probability of being best and the expected loss of shipping it (Beta-Binomial, computed by quadrature, so the numbers are reproducible).
+* The minimum detectable effect of the test as run, an optional `mde` (smallest lift that matters) to judge practical significance, an optional `segment_column` breakdown with a Simpson's-paradox warning, and a plain decision.
+* In the guided workflow, step 2 adds the sample ratio check and step 4 sizes power in lift terms.
+
+The server also offers the prompts `analyze`, `hypothesis_test` and `explore_data`, which clients such as VS Code show as slash commands.
 
 ## Data files
 
@@ -233,7 +250,7 @@ Excel files are always read whole (up to about 1.9 GB); export very large workbo
 
 ## Accuracy
 
-`test/reference/generate.py` computes expected values with SciPy and statsmodels for 43 cases. They cover every test and alternative, Welch and Student t-tests, p-values below 1e-30, ties in Spearman, ANCOVA (Type II SS), MANOVA with 2 and 3 outcomes, and file inputs with missing values. `test/reference/guided.json` adds the ANCOVA slope-equality F test and the step-4 power calculations (two-sample, one-sample, proportion and correlation), checked against statsmodels. `npm test` runs everything through real MCP clients over stdio (with and without form support) and requires agreement to a relative error of 1e-6.
+`test/reference/generate.py` computes expected values with SciPy and statsmodels for 43 cases. They cover every test and alternative, Welch and Student t-tests, p-values below 1e-30, ties in Spearman, ANCOVA (Type II SS), MANOVA with 2 and 3 outcomes, and file inputs with missing values. `test/reference/guided.json` adds the ANCOVA slope-equality F test and the step-4 power calculations (two-sample, one-sample, proportion and correlation), checked against statsmodels. `test/reference/abtest.py` checks Tukey HSD (studentized range, adjusted p-values, intervals and rejections against `scipy.stats.tukey_hsd` and statsmodels' `pairwise_tukeyhsd`) and every A/B number: z, p and one-sided p (`proportions_ztest`), lift intervals (`confint_proportions_2indep`), Wilson intervals, Fisher's exact, chi-square, Holm/Bonferroni (`multipletests`), the sample ratio check, Welch t-tests, the Bayesian probabilities and expected loss (numerical integration in SciPy) and sample sizes (`NormalIndPower`). `npm test` runs everything through real MCP clients over stdio (with and without form support) and requires agreement to a relative error of 1e-6.
 
 Known approximations, also stated in the results:
 
@@ -256,6 +273,8 @@ STATS_EXPLORER_STREAM_MB=0 npm test                               # the same, ev
 STATS_EXPLORER_STREAM_MB=0 STATS_EXPLORER_EXACT_CAP=3 npm test    # ... using only one-pass summaries
 npm run inspect               # open the MCP Inspector
 npm run reference             # regenerate reference cases (needs Python + scipy + statsmodels)
+npm run reference:ab          # regenerate the Tukey / A/B reference values and test/fixtures/experiment.csv
+npm run jev:eval -- --dry-run # measure Jev on labeled cases (drop --dry-run and set TYPESAFE_API_KEY to call Jev)
 cd vscode-extension && npm install && npm test && npm run package   # build the .vsix
 ```
 

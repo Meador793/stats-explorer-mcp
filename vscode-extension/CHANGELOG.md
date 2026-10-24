@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.0
+
+- **A/B tests:** ask "did variant B beat A?" and get the lift with its interval, a sample ratio mismatch check, adjusted p-values for several variants, the Bayesian probability to beat the control, segment breakdowns and a clear decision. Conversion rates and revenue-type metrics; files of any size.
+- **A/B sample size:** "how many visitors do I need to detect a 10% lift?", with days from your daily traffic.
+- **ANOVA now says which groups differ:** a Tukey HSD post-hoc test marks the significant pairs, the best group and a letter display, in answers and reports.
+
 ## 1.4.0
 
 - **Works with Jev** (TypeSafe's judgment model). Jev checks the test plan and the AI's written conclusions against the computed results. Stats Explorer also checks every claim itself: the numbers, significance, and causal wording. Only claims that pass go into reports, and each report lists every check.

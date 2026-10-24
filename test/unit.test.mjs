@@ -72,7 +72,7 @@ const errText = async (name, args) => {
 test('lists all tools with read-only annotations', async () => {
   const { tools } = await client.listTools();
   const LARGE_FILE_TOOLS = ['job_status', 'cancel_job', 'large_file_plan', 'manage_cache'];
-  assert.equal(tools.filter((t) => !LARGE_FILE_TOOLS.includes(t.name)).length, 16); // 14 statistics tools + group_summary + find_relationships
+  assert.equal(tools.filter((t) => !LARGE_FILE_TOOLS.includes(t.name)).length, 18); // 16 statistics tools (incl. ab_test, ab_test_plan) + group_summary + find_relationships
   assert.deepEqual(tools.filter((t) => LARGE_FILE_TOOLS.includes(t.name)).map((t) => t.name).sort(), [...LARGE_FILE_TOOLS].sort());
   for (const t of tools) {
     assert.equal(t.annotations.readOnlyHint, t.name !== 'manage_cache', t.name);

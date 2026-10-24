@@ -2,9 +2,10 @@
 
 ![Stats Explorer MCP: verified statistics your AI assistant calls instead of guessing numbers](https://raw.githubusercontent.com/meador793/stats-explorer-mcp/main/docs/images/hero.png)
 
-**16 statistics and analytics tools an AI assistant can call instead of guessing numbers, on data files of any size:**
+**18 statistics and analytics tools an AI assistant can call instead of guessing numbers, on data files of any size:**
 
-* **Tests:** t-tests, z-tests, ANOVA, ANCOVA, MANOVA, chi-square, Fisher's exact, binomial and correlation.
+* **Tests:** t-tests, z-tests, ANOVA (with a Tukey HSD post-hoc), ANCOVA, MANOVA, chi-square, Fisher's exact, binomial and correlation.
+* **A/B testing:** A/B and A/B/n readouts with lift intervals, sample ratio check, Bayesian probabilities and segment breakdowns, plus sample-size planning.
 * **Analytics:** totals, averages and counts by category (top N), and "what drives X?" rankings across every column.
 * **Helpers:** descriptive stats, confidence intervals, power analysis, a "which test should I use?" tool, and a data-file inspector.
 
@@ -62,6 +63,12 @@ Before anything runs, VS Code shows you the columns, groups, chart type or repor
 3. Start a **new** Claude session (Command Palette → **Developer: Reload Window**, then New session). Type `/mcp` to check that **stats-explorer** is connected.
 
 Claude asks you to confirm choices in the chat; reply to approve or change them.
+
+## New in 1.5: A/B tests and Tukey HSD
+
+- *"Did the new checkout page (B) beat the old one (A) in experiment.csv? Break it down by device."* gives the lift with its interval, a sample ratio mismatch check, adjusted p-values for A/B/n, the Bayesian probability to beat the control and a decision, for conversion rates or revenue-type metrics.
+- *"How many visitors do I need to detect a 10% lift on a 4% conversion rate?"* plans the test, including how many days it will take.
+- Every ANOVA now names the groups that differ (Tukey HSD), with the best group and a letter display.
 
 ## New in 1.4: checked by Jev
 

@@ -113,7 +113,42 @@ async function createVisualization(a, ctx) {
 
 // ------------------------------------------------------------------ build_report
 
-const REPORTABLE = ['hypothesis_test', 'describe', 'confidence_interval', 'correlation', 'group_summary', 'relationships', 'visualization', 'base_rate', 'power'];
+const REPORTABLE = ['hypothesis_test', 'describe', 'confidence_interval', 'correlation', 'group_summary', 'relationships', 'visualization', 'base_rate', 'power', 'ab_plan'];
+
+/** Tukey HSD lines for a report: significant pairs (highlighted), letters and the best group. */
+export function postHocReportLines(t, omnibusSignificant) {
+  if (!t) return [];
+  const out = [`Which groups differ (${t.method}, family-wise α = ${t.alpha}):`];
+  if (!t.significant_pairs.length) out.push('- No pair of groups differs significantly after adjusting for multiple comparisons.');
+  else out.push(...t.significant_pairs.map((x) => `- **${x.higher} > ${x.lower}**: difference ${fmt(x.mean_difference)}, adjusted p = ${fmt(x.p_adjusted)}`));
+  const h = t.highlight.highest;
+  if (t.significant_pairs.length) out.push(h.above_all_others ? `**${h.group}** has the highest mean (${fmt(h.mean)}) and is significantly above every other group.` : `${h.group} has the highest mean (${fmt(h.mean)})${h.significantly_above.length ? `, significantly above ${h.significantly_above.join(', ')}` : ', but not significantly above the others'}.`);
+  out.push(`Groups sharing a letter do not differ significantly: ${Object.entries(t.letters).map(([g, l]) => `${g} (${l})`).join(', ')}.`);
+  if (!omnibusSignificant && t.significant_pairs.length) out.push('The overall test was not significant, so treat these pairwise differences with caution.');
+  return out;
+}
+
+const pctR = (x, d = 2) => (x == null || !isFinite(x) ? 'n/a' : `${(x * 100).toFixed(d)}%`);
+const ppR = (x) => (x == null || !isFinite(x) ? 'n/a' : `${x >= 0 ? '+' : ''}${(x * 100).toFixed(2)} pp`);
+
+/** A/B readout lines for a report. */
+export function abReportLines(d) {
+  const conv = d.metric === 'conversion';
+  const out = [];
+  const s = d.sample_ratio_check;
+  out.push(`Traffic split: ${d.variants.map((v, i) => `${v.name} ${v.n.toLocaleString('en-US')} (${pctR(s.observed_share[i], 1)})`).join(', ')}. Sample ratio check: ${s.mismatch ? `**mismatch** (χ² p = ${fmt(s.p_value)}); the results should not be trusted until the cause is found` : `ok (p = ${fmt(s.p_value)})`}.`);
+  out.push(...d.variants.map((v) => (conv ? `- ${v.name}: ${v.conversions.toLocaleString('en-US')} of ${v.n.toLocaleString('en-US')} converted, ${pctR(v.rate)} (${Math.round(d.confidence * 100)}% CI ${pctR(v.ci_lower)} to ${pctR(v.ci_upper)})` : `- ${v.name}: mean ${fmt(v.mean)}, SD ${fmt(v.sd)}, n = ${v.n} (${Math.round(d.confidence * 100)}% CI ${fmt(v.ci_lower)} to ${fmt(v.ci_upper)})`)));
+  if (d.omnibus) out.push(`Across all variants: ${d.omnibus.test}, ${formatPEq(d.omnibus.p_value)}.`);
+  out.push(`Each variant against ${d.control}${d.comparisons.length > 1 ? ` (p-values ${d.correction === 'none' ? 'not adjusted' : `${d.correction === 'holm' ? 'Holm' : 'Bonferroni'}-adjusted`})` : ''}:`);
+  out.push(...d.comparisons.map((c) => `- ${c.significant ? '**' : ''}${c.variant}${c.significant ? '**' : ''}: ${conv ? ppR(c.absolute_lift) : fmt(c.absolute_lift)} (CI ${conv ? `${ppR(c.absolute_lift_ci[0])} to ${ppR(c.absolute_lift_ci[1])}` : `${fmt(c.absolute_lift_ci[0])} to ${fmt(c.absolute_lift_ci[1])}`}), relative ${c.relative_lift == null ? 'n/a' : `${c.relative_lift >= 0 ? '+' : ''}${fmt(c.relative_lift * 100, 3)}%`}, ${formatPEq(c.p_value)}${d.comparisons.length > 1 ? `, adjusted p = ${fmt(c.p_adjusted)}` : ''}${c.fisher_exact_p != null ? `, Fisher's exact p = ${fmt(c.fisher_exact_p)}` : ''}${c.practical ? `; ${c.practical}` : ''}`));
+  if (d.post_hoc) out.push(...postHocReportLines(d.post_hoc, d.omnibus?.significant));
+  if (d.bayesian) out.push(`Bayesian view (${d.bayesian.model}): ${d.bayesian.variants.filter((v) => v.prob_beats_control != null).map((v) => `P(${v.name} beats ${d.control}) = ${pctR(v.prob_beats_control, 1)}`).join('; ')}${d.bayesian.variants[0].prob_best != null ? `. Probability of being best: ${d.bayesian.variants.map((v) => `${v.name} ${pctR(v.prob_best, 1)}`).join(', ')}. Expected loss if shipped: ${d.bayesian.variants.map((v) => `${v.name} ${ppR(v.expected_loss)}`).join(', ')}` : ''}.`);
+  if (d.minimum_detectable_effect) { const m = d.minimum_detectable_effect; out.push(`With these sample sizes the test could reliably (80% power) detect a lift of about ${conv ? `${ppR(m.absolute)} (${fmt(m.relative * 100, 3)}% relative)` : fmt(m.absolute)}.`); }
+  if (d.segments) out.push(`By segment (exploratory):`, ...d.segments.map((sg) => (sg.skipped ? `- ${sg.segment}: skipped (${sg.skipped})` : `- ${sg.segment} (n = ${sg.n}): ${sg.comparisons.map((c) => `${c.variant} ${conv ? ppR(c.absolute_lift) : fmt(c.absolute_lift)}, p = ${fmt(c.p_value)}${c.significant ? ' (significant)' : ''}`).join('; ')}`)));
+  out.push(`**Decision:** ${d.decision}`);
+  out.push(...(d.notes || []).map((n) => `- ${n}`));
+  return out;
+}
 
 function hypothesisStory(res, session) {
   const an = session.analyses.find((x) => x.id === res.analysisId);
@@ -136,12 +171,14 @@ function hypothesisStory(res, session) {
   else if (power) how.push(`Power (step 4): ${fmt(power.power, 3)} to detect ${power.unit} = ${power.effect}${power.conventional ? ' (a conventional medium effect)' : ''}; about ${power.needed} ${power.n_unit || ''} would be needed for ${power.target} power${power.basis ? ` (${power.basis})` : ''}.`.replace('  ', ' '));
   else if (step(4).note) how.push(`Power (step 4): ${step(4).note}.`);
   sections.push(['3 · How we tested it', how]);
-  const found = [`${d.statistic ? `${d.statistic.name} = ${fmt(d.statistic.value)}` : 'Exact test'}${d.df !== undefined ? `, df = ${typeof d.df === 'object' ? Object.values(d.df).map((x) => fmt(x)).join(', ') : fmt(d.df)}` : ''}, ${formatPEq(p)}.`];
+  const found = d.sample_ratio_check ? [`${d.comparisons.length > 1 ? 'Smallest adjusted p-value' : 'p-value'} against the control: ${formatPEq(p)}.`] : [`${d.statistic ? `${d.statistic.name} = ${fmt(d.statistic.value)}` : 'Exact test'}${d.df !== undefined ? `, df = ${typeof d.df === 'object' ? Object.values(d.df).map((x) => fmt(x)).join(', ') : fmt(d.df)}` : ''}, ${formatPEq(p)}.`];
   if (d.effect_size) found.push(`Effect size: ${d.effect_size.name} = ${fmt(d.effect_size.value, 3)}${d.effect_size.magnitude ? ` (${d.effect_size.magnitude})` : ''}.`);
   if (d.confidence_interval) found.push(`${Math.round(d.confidence_interval.level * 100)}% confidence interval for the ${d.confidence_interval.of}: ${fmt(d.confidence_interval.lower)} to ${fmt(d.confidence_interval.upper)}.`);
+  if (d.post_hoc && d.test === 'One-way ANOVA') found.push(...postHocReportLines(d.post_hoc, d.significant));
   if (d.pairwise_comparisons) {
-    found.push(`Which groups differ (${d.pairwise_comparisons.method}):`, ...d.pairwise_comparisons.comparisons.map((x) => `- ${x.groups[0]} vs ${x.groups[1]}: difference ${fmt(x.mean_difference)}, adjusted p = ${fmt(x.p_bonferroni)}${x.significant ? ' (significant)' : ''}`));
+    found.push(`Pairwise comparisons (${d.pairwise_comparisons.method}):`, ...d.pairwise_comparisons.comparisons.map((x) => `- ${x.groups[0]} vs ${x.groups[1]}: difference ${fmt(x.mean_difference)}, adjusted p = ${fmt(x.p_bonferroni)}${x.significant ? ' (significant)' : ''}`));
   }
+  if (d.sample_ratio_check) found.push(...abReportLines(d));
   if (d.warnings?.length) found.push(...d.warnings.map((w) => `⚠ ${w}`));
   sections.push(['4 · What we found', found]);
   const verdict = sig
@@ -184,6 +221,8 @@ function genericSection(res) {
       return { lines: [`Prevalence ${fmt(d.prevalence * 100, 3)}%, sensitivity ${fmt(d.sensitivity * 100, 3)}%, specificity ${fmt(d.specificity * 100, 3)}%.`, `PPV ${fmt(d.ppv * 100, 3)}%: of everything flagged positive, that share is really positive. Per 10,000 cases: ${d.per_10000.true_positive} true alarms, ${d.per_10000.false_positive} false alarms, ${d.per_10000.false_negative} missed.`] };
     case 'power':
       return { lines: res.summary.length ? res.summary.slice(1) : [`Power ${fmt(d.power, 3)} for ${d.unit} = ${d.effect}.`] };
+    case 'ab_plan':
+      return { lines: res.summary.slice(1) };
     default:
       return { lines: [] };
   }

@@ -102,6 +102,24 @@ const SIG_NEG = /\b(?:in|non-?)significan|(?:\b(?:not|no|never|neither|nor|witho
 const SIG_POS = /\bsignifican(t|ce|tly)\b/i;
 const CAUSAL = /\b(causes?|caused|causing|leads? to|led to|results? in|drives?|driven by|because of|due to|makes?\s+\w+\s+(?:increase|decrease|rise|fall)|proves?|proven|proof)\b/i;
 
+const escRe = (x) => String(x).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** Does the claim name this group / variant? Short names (A, B, v2) must match case-sensitively. */
+const mentions = (claim, name) => {
+  const n = String(name).trim();
+  if (!n) return false;
+  return new RegExp(`(?<![\\w])${escRe(n)}(?![\\w])`, n.length <= 2 ? '' : 'i').test(claim);
+};
+
+/** Pairwise comparisons inside the results (A/B variant vs control, Tukey pairs), for claims about one pair. */
+function namedComparisons(tests) {
+  const out = [];
+  for (const t of tests) {
+    for (const c of t.comparisons || []) if (c.variant != null && c.control != null) out.push({ names: [c.variant, c.control], significant: c.significant, p_value: c.p_adjusted ?? c.p_value, alpha: t.alpha });
+    for (const c of t.post_hoc?.comparisons || []) out.push({ names: c.groups, significant: c.significant, p_value: c.p_adjusted, alpha: t.post_hoc.alpha });
+  }
+  return out;
+}
+
 /**
  * Deterministic checks for one claim.
  * ignore = numbers that appear in the user's question, column or group names (years, "Q3", "top 10").
@@ -113,7 +131,9 @@ export function checkClaim(claim, { numbers, ignore = [], tests = [] }) {
   if (unmatched.length) { outcome = 'review'; issues.push(`Number${unmatched.length > 1 ? 's' : ''} not found in the computed results: ${unmatched.map((n) => n.raw).join(', ')}.`); }
   const saysNot = SIG_NEG.test(claim);
   const saysSig = !saysNot && SIG_POS.test(claim);
-  const sigTests = tests.filter((t) => typeof t.significant === 'boolean');
+  // A claim naming both sides of a pairwise comparison is checked against that comparison.
+  const named = namedComparisons(tests).filter((c) => c.names.every((n) => mentions(claim, n)));
+  const sigTests = named.length ? named : tests.filter((t) => typeof t.significant === 'boolean');
   if (sigTests.length && (saysSig || saysNot)) {
     const all = sigTests.every((t) => t.significant), none = sigTests.every((t) => !t.significant);
     if (saysSig && none) { outcome = 'fail'; issues.push(`Says the result is significant, but ${sigTests.length > 1 ? 'no test was' : `p = ${fmt(sigTests[0].p_value, 4)} is not below α = ${sigTests[0].alpha}`}.`); }

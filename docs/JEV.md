@@ -136,3 +136,27 @@ Reports built with `build_report` get an **Independent checks** section for the 
 ## Limits
 
 Jev's probabilities come from a model. They're a strong second opinion, not proof, and TypeSafe hasn't published a calibration curve, so tune the thresholds on your own analyses. In cooperate mode the check depends on the assistant relaying it honestly. Use enforce or orchestrated mode when that matters.
+
+## Measuring how well Jev does
+
+Before you rely on Jev (or advertise that it checks the work), measure it on your own key:
+
+```bash
+TYPESAFE_API_KEY=YOUR_KEY npm run jev:eval            # PowerShell: $env:TYPESAFE_API_KEY="YOUR_KEY"; npm run jev:eval
+npm run jev:eval -- --repeat 3                       # ask each case 3 times to see how stable the answers are
+npm run jev:eval -- --dry-run                        # no key: what Stats Explorer's own checks catch by themselves
+```
+
+The script sends Jev the exact packets the server sends at the `plan` and `conclusions` checkpoints, for 45 labeled cases built from real results on the bundled files: 20 test plans (right and wrong tests, swapped or one-sided hypotheses nobody asked for, unrelated columns, an A/B test on the wrong metric or arm) and 25 written claims (correct ones, wrong numbers, significance stated the wrong way round, causal or "proves" wording, a non-significant variant called the winner, Tukey pairs). It writes `jev-eval-report.md` and `.json` with, for Jev alone and combined with Stats Explorer's own checks:
+
+| Measure | Meaning | Good |
+|---|---|---|
+| False approval | a bad plan or claim that passed: the error that matters | ≤ 5% combined |
+| False alarm | a fine plan or claim that was flagged | ≤ 25% |
+| AUC | how often Jev scores a good item above a bad one | ≥ 0.9 |
+| Brier score | calibration of the probabilities (0 is perfect) | lower is better |
+| Latency | median and 95th percentile per call | |
+
+The report ends with a verdict (good / advisory / not reliable yet) and every item the combined check got wrong. Without a key, the dry run shows the baseline: Stats Explorer's own checks catch about two thirds of the bad conclusions (wrong numbers, wrong significance, causal wording) with no false alarms, and none of the bad plans. Judging plans is the part only Jev adds.
+
+If the result is "advisory", raise `STATS_EXPLORER_JEV_PASS_AT` (e.g. 0.9) and run it again: fewer bad items pass, at the cost of more reviews.

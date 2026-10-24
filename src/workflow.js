@@ -2,7 +2,8 @@
 // the six "Bring it all together" steps from the app's Learn tab in order, and every column / group /
 // chart selection is confirmed by the user before it runs.
 import { z } from 'zod';
-import { IMPL, TOOLS, groupValues, pairedColumns, crosstab, rowsFor } from './tools.js';
+import { IMPL, TOOLS, groupValues, pairedColumns, crosstab, rowsFor, abVariantsFromFile, abInlineVariants, defaultControl } from './tools.js';
+import { srmCheck, abPower } from './abtest.js';
 import { loadTable, openTable, largeFilePath, numericColumn, requireColumn, isNumericColumn, categories, missingCount, assertTabularSource, UserError } from './data.js';
 import * as BIG from './big/bigtools.js';
 import { accumulate } from './big/service.js';
@@ -29,15 +30,16 @@ export const TESTS = {
   fisher_exact: { impl: IMPL.fisherExact, label: "Fisher's exact test", directional: true },
   binomial_test: { impl: IMPL.binomialTest, label: 'exact binomial test', directional: true },
   correlation: { impl: IMPL.correlation, label: 'correlation test', directional: true },
+  ab_test: { impl: IMPL.abTest, label: 'A/B test', directional: true },
 };
 
 const NUMERIC_ROLES = ['column', 'column2', 'x_column', 'y_column', 'outcome_column', 'covariate_column', 'value_column'];
-const CATEGORY_ROLES = ['group_column', 'row_column', 'col_column'];
+const CATEGORY_ROLES = ['group_column', 'row_column', 'col_column', 'variant_column', 'segment_column'];
 const ROLE_TITLES = {
   column: 'Measurement column', column2: 'Second column', x_column: 'X column', y_column: 'Y column',
   outcome_column: 'Outcome column', covariate_column: 'Covariate column', group_column: 'Group column',
   row_column: 'Row variable', col_column: 'Column variable', group1: 'First group', group2: 'Second group',
-  outcome_columns: 'Outcome columns', value_column: 'Value column',
+  outcome_columns: 'Outcome columns', value_column: 'Value column', variant_column: 'Variant column', segment_column: 'Segment column',
 };
 
 const token = z.string().optional().describe('Only after the user has confirmed the proposed choices: the confirmation_token from the previous response.');
@@ -86,10 +88,10 @@ async function startAnalysis(a, { session }) {
     };
   }
   return {
-    data: { analysis_id: an.id, mode: a.mode, tools: ['group_summary', 'find_relationships', 'describe', 'confidence_interval', 'correlation', 'create_visualization', 'power_analysis', 'base_rate_check', 'build_report'] },
+    data: { analysis_id: an.id, mode: a.mode, tools: ['group_summary', 'find_relationships', 'describe', 'confidence_interval', 'correlation', 'create_visualization', 'power_analysis', 'ab_test_plan', 'base_rate_check', 'build_report'] },
     summary: [
       `Started analysis ${an.id}: exploring the data for "${a.question}".`,
-      'Use what the question needs, combining tools if necessary: group_summary (totals, averages, counts or medians per category, top N), find_relationships (which columns relate most to a numeric outcome: "what drives X"), describe (summary statistics, shape, spread), confidence_interval (estimates), correlation (strength of a relationship, no p-value), create_visualization (charts), power_analysis (sample-size planning), base_rate_check (rare-event screening).',
+      'Use what the question needs, combining tools if necessary: group_summary (totals, averages, counts or medians per category, top N), find_relationships (which columns relate most to a numeric outcome: "what drives X"), describe (summary statistics, shape, spread), confidence_interval (estimates), correlation (strength of a relationship, no p-value), create_visualization (charts), power_analysis (sample-size planning), ab_test_plan (visitors and days needed for an A/B test), base_rate_check (rare-event screening).',
       'This is not a hypothesis test: do not state hypotheses or p-values, and the report will have no hypothesis section. If the user later asks whether a difference or relationship is real or significant, call start_analysis again with mode "hypothesis_test".',
       'Each column and chart choice is shown to the user to confirm before it runs; only include columns the user asked about.',
     ],
@@ -113,6 +115,11 @@ function defaultHypotheses(test, args) {
     case 'fisher_exact': return ['There is no association between the two variables (odds ratio = 1).', 'The two variables are associated.'];
     case 'binomial_test': return [`The true success rate is ${args.p0 ?? 0.5}.`, `The true success rate differs from ${args.p0 ?? 0.5}.`];
     case 'z_test': return args.type === 'proportion' ? [`The true proportion is ${args.p0}.`, `The true proportion differs from ${args.p0}.`] : [`The true mean is ${args.mu0}.`, `The true mean differs from ${args.mu0}.`];
+    case 'ab_test': {
+      const what = args.metric === 'conversion' ? 'conversion rate' : `mean ${g('outcome_column', 'outcome')}`;
+      const ctl = args.control || 'the control';
+      return [`Every variant has the same ${what} as ${ctl}.`, `At least one variant's ${what} differs from ${ctl}.`];
+    }
     case 'correlation': return [`There is no ${args.method === 'spearman' ? 'monotonic' : 'linear'} relationship between ${g('x_column', 'x')} and ${g('y_column', 'y')}.`, `${g('x_column', 'x')} and ${g('y_column', 'y')} are related.`];
     default: return ['', ''];
   }
@@ -247,6 +254,20 @@ async function extractData(test, args) {
       return { kind: 'table', m: args.table || [], rl: args.row_labels, cl: args.col_labels };
     }
     case 'binomial_test': return { kind: 'proportion', k: args.successes, n: args.trials, p0: args.p0 };
+    case 'ab_test': {
+      if (args.metric === 'continuous' && table) {
+        const g = groupValues(table, args.outcome_column, args.variant_column);
+        const keys = args.variants_to_include?.length ? args.variants_to_include.map(String) : [...g.keys()].sort((x, y) => x.localeCompare(y, 'en', { numeric: true }));
+        for (const k of keys) if (!g.has(k)) throw new UserError(`Variant "${k}" not found in ${args.variant_column}.`);
+        return { kind: 'numeric', ab: true, samples: keys.map((k) => S(k, g.get(k))), variants: keys.map((k) => ({ name: k, n: g.get(k).length, mean: mean(g.get(k)), sd: stdDev(g.get(k)) })) };
+      }
+      if (args.metric === 'continuous' && (args.variants || []).every((v) => v.values)) {
+        const vs = abInlineVariants(args);
+        return { kind: 'numeric', ab: true, samples: (args.variants || []).map((v, i) => S(vs[i].name, v.values)), variants: vs };
+      }
+      const variants = table ? (await abVariantsFromFile(args)).variants : abInlineVariants(args);
+      return { kind: 'ab', metric: args.metric, variants };
+    }
     case 'correlation': {
       if (table) { const [x, y] = pairedColumns(table, args.x_column, args.y_column); return { kind: 'pairs', samples: [S(args.x_column, x), S(args.y_column, y)] }; }
       return { kind: 'pairs', samples: [S(args.x_name || 'x', args.x || []), S(args.y_name || 'y', args.y || [])] };
@@ -318,6 +339,15 @@ async function extractBig(test, args, path) {
       }
       const { m, rl, cl } = await BIG.crosstabOf(path, args.row_column, args.col_column, [missing]);
       return { kind: 'table', m, rl, cl };
+    }
+    case 'ab_test': {
+      if (args.metric === 'continuous') {
+        const st = await one({ type: 'grouped', col: args.outcome_column, by: args.variant_column }); BIG.checkBad(st);
+        const keys = args.variants_to_include?.length ? args.variants_to_include.map(String) : [...st.groups.keys()].sort((x, y) => x.localeCompare(y, 'en', { numeric: true }));
+        for (const k of keys) if (!st.groups.has(k)) throw new UserError(`Variant "${k}" not found in ${args.variant_column}.`);
+        return { kind: 'numeric', ab: true, samples: keys.map((k) => S(k, st.groups.get(k))), variants: keys.map((k) => { const G = st.groups.get(k); return { name: k, n: G.n, mean: sMean(G), sd: sSd(G) }; }) };
+      }
+      return { kind: 'ab', metric: 'conversion', variants: (await abVariantsFromFile({ ...args, file: path })).variants };
     }
     case 'correlation': {
       const st = await one({ type: 'pair', x: args.x_column, y: args.y_column }); BIG.checkBad(st);
@@ -446,6 +476,20 @@ async function checkAssumptions(a, ctx) {
     else add('ok', 'Sample size', `${d.k} successes out of ${d.n} trials.`);
   } else if (d.kind === 'summary') {
     add('info', 'Data', 'Only summary numbers (mean, n) were given, so the shape of the data cannot be checked. The z-test assumes σ is truly known.');
+  } else if (d.kind === 'ab' && d.metric === 'conversion') {
+    const N = d.variants.reduce((s, v) => s + v.n, 0), X = d.variants.reduce((s, v) => s + v.conversions, 0);
+    const minExp = Math.min(...d.variants.flatMap((v) => [(v.n * X) / N, (v.n * (N - X)) / N]));
+    add(minExp < 5 ? 'warning' : 'ok', 'Counts', `${d.variants.map((v) => `${v.name}: ${v.conversions} of ${v.n}`).join(', ')}. ${minExp < 5 ? "Some expected counts are below 5, so the z-test is rough; the result will also give Fisher's exact p for each comparison." : 'Expected counts are large enough for the z-test.'}`);
+  } else if (d.kind === 'ab') {
+    add('info', 'Data', 'Only summary numbers (n, mean, SD per variant) were given, so the shape of the data cannot be checked. With large samples the t-test is robust to skew.');
+  }
+  if (test === 'ab_test') {
+    const vs = d.variants;
+    const srm = srmCheck(vs.map((v) => v.n), vs.map((v) => v.name), args.expected_split, args.srm_alpha ?? 0.001);
+    add(srm.mismatch ? 'warning' : 'ok', 'Sample ratio (traffic split)', `${vs.map((v, i) => `${v.name} ${v.n} (${fmt(srm.observed_share[i] * 100, 3)}%)`).join(', ')} vs planned ${srm.expected_share.map((x) => `${fmt(x * 100, 3)}%`).join(' / ')}: χ² = ${fmt(srm.chi_square)}, ${formatPEq(srm.p_value)}. ${srm.mismatch ? 'Sample ratio mismatch: assignment or tracking is probably broken, so no result from this test can be trusted until the cause is found. Tell the user before going on.' : 'The split matches the plan.'}`);
+    checks[checks.length - 1].stats = { chi_square: srm.chi_square, df: srm.df, p_value: srm.p_value };
+    add('question', 'Randomisation and stopping rule', 'Ask the user: were visitors randomly assigned and each counted once (not per page view), and was the sample size fixed before looking at results? Stopping as soon as p dipped below α inflates false positives.');
+    if (vs.length > 2) add('info', 'Several variants', `${vs.length - 1} variants are compared with the control; p-values are ${args.correction === 'none' ? 'not adjusted (more chances of a false winner)' : `${args.correction === 'bonferroni' ? 'Bonferroni' : 'Holm'}-adjusted`}.`);
   }
   add('question', 'Who is missing from the sample?', 'Ask the user how the data were collected. A biased sample (self-selection, survivors only, one site or time period) invalidates every number downstream, and no statistic can detect it.');
   if (an.plan.file) {
@@ -504,7 +548,9 @@ async function checkSpread(a, ctx) {
     notes.push(ratio > 4 ? `Largest/smallest variance ratio ${fmt(ratio, 3)}: spreads differ a lot.${test === 't_test' ? (args.equal_variances ? " Welch's t-test (equal_variances: false) is safer; revise step 1." : " Welch's t-test (the default) already allows this.") : test === 'anova' ? ' ANOVA assumes similar spreads; treat a borderline p-value with caution and look at the pairwise Welch comparisons.' : ''}` : `Variance ratio ${fmt(ratio, 3)}: spreads are comparable.`);
   }
   if (rows.some((r) => r.outliers_1_5_iqr)) notes.push('Check the outliers before going further: a data-entry error, a tracking glitch or a real extreme? Do not delete them just to get a result.');
-  if (!rows.length) notes.push('This test works on counts, so there is no spread to check. Step 3 is satisfied by looking at the counts in step 2.');
+  if (!rows.length) notes.push(d.kind === 'ab' && d.metric === 'continuous'
+    ? `Only summary numbers were given: ${d.variants.map((v) => `${v.name} SD ${fmt(v.sd)}`).join(', ')}. Outliers cannot be checked without the raw values.`
+    : 'This test works on counts, so there is no spread to check. Step 3 is satisfied by looking at the counts in step 2.');
   const r = session.addResult({ kind: 'spread', title: 'Spread check', data: { spread: rows, notes }, summary: [] });
   session.completeStep(3, { note: rows.length ? `${rows.length} sample(s) checked` : 'counts only', resultId: r.id });
   return { data: { step: 3, spread: rows, notes, result_id: r.id }, summary: [`Step 3: ${STEPS[2].title}`, ...lines, ...notes.map((n) => `  ${n}`), 'Next: step 4, power_analysis (ask the user for the smallest effect that would matter to them).'] };
@@ -537,6 +583,33 @@ async function guidedPower(a, ctx) {
   if (test === 't_test' || (test === 'z_test' && d.kind !== 'proportion') || test === 'anova') { family = 'means'; unit = "Cohen's d"; }
   else if (test === 'correlation') { family = 'r'; unit = 'correlation r'; }
   else if (test === 'binomial_test' || (test === 'z_test' && d.kind === 'proportion')) { family = 'h'; unit = 'true proportion p₁'; }
+  else if (test === 'ab_test') {
+    const metric = args.metric;
+    const ctlName = args.control != null ? String(args.control) : defaultControl(d.variants);
+    const ctlIdx = Math.max(0, d.variants.findIndex((v) => v.name === ctlName));
+    const unitAb = metric === 'conversion' ? 'absolute lift in conversion rate (0.005 = 0.5 percentage points)' : `absolute difference in mean ${args.outcome_column || 'outcome'}`;
+    if (es == null) {
+      if (!a.use_conventional) return { data: { step: 4, status: 'needs_input', effect_unit: unitAb }, summary: [`Step 4 needs one number from the user: the smallest lift that would matter to the business, as an ${unitAb}.`, `Ask them. If they don't know, call power_analysis again with use_conventional: true (uses a ${metric === 'conversion' ? '10% relative lift on the control rate' : 'medium effect, Cohen\'s d = 0.5'}) and say so in the report.`] };
+      const C = d.variants[ctlIdx];
+      if (metric === 'conversion') es = (C.conversions / C.n) * 0.1;
+      else es = 0.5 * Math.sqrt(d.variants.reduce((s, v) => s + (v.n - 1) * v.sd ** 2, 0) / d.variants.reduce((s, v) => s + v.n - 1, 0));
+    }
+    const pw = abPower({ metric, variants: d.variants, controlIndex: ctlIdx, effect: es, alpha, alternative, power: target });
+    const low = pw.power < target;
+    const basis = `control vs the smallest variant${d.variants.length > 2 ? `, α split over ${d.variants.length - 1} comparisons (${fmt(pw.alpha_per_comparison)} each)` : ''}`;
+    const r = session.addResult({ kind: 'power_step', title: 'Power check', data: { effect: es, unit: unitAb, n: pw.n, power: pw.power, target, needed: pw.needed, n_unit: 'per variant', basis, conventional: a.smallest_effect == null }, summary: [] });
+    session.completeStep(4, { note: `power ${fmt(pw.power, 3)} for a lift of ${fmt(es)}`, resultId: r.id });
+    return {
+      data: { step: 4, smallest_effect: es, effect_unit: unitAb, n: pw.n, power: pw.power, target_power: target, n_needed: pw.needed, n_unit: 'per variant', method: 'normal approximation', result_id: r.id },
+      summary: [
+        `Step 4: ${STEPS[3].title}`,
+        `With about ${pw.n} per variant (${basis}), power to detect a lift of ${metric === 'conversion' ? `${fmt(es * 100, 3)} percentage points` : fmt(es)}${a.smallest_effect == null ? ' (conventional, not the user\'s own threshold)' : ''} is ${fmt(pw.power, 3)}.`,
+        `For ${target} power you would need about ${pw.needed} per variant.`,
+        low ? `Power is below ${target}: a non-significant result would be uninformative, not proof that the variants perform the same. Say this when reporting.` : 'The sample is large enough to detect that lift most of the time.',
+        'Next: step 5, run_test.',
+      ],
+    };
+  }
   else {
     session.completeStep(4, { note: `power not computed for the ${an.plan.label}` });
     return { data: { step: 4, status: 'done', computed: false }, summary: [`Step 4: ${STEPS[3].title}`, `Stats Explorer does not compute power for the ${an.plan.label}. Tell the user that a non-significant result will be hard to interpret if the groups or cells are small, and judge whether the sample is large enough for the effect they care about.`, 'Next: step 5, run_test.'] };
@@ -746,7 +819,7 @@ export function guidedTools({ create_visualization, build_report }) {
     },
     {
       name: 'state_hypotheses', title: 'Step 1: state the question, hypotheses and test',
-      description: `Step 1 of a hypothesis test. Fix the test, the data selection and H₀/H₁ BEFORE looking at results. test_arguments are the same fields the test takes (e.g. t_test: {type, file, column, group_column, group1, group2, equal_variances, mu0}; anova: {file, column, group_column}; chi_square: {type, file, row_column, col_column}; correlation: {file, x_column, y_column, method}). Only use columns the user asked about. The user confirms every column/group choice, the direction and α. Calling it again later revises the plan and restarts steps 2–6.`,
+      description: `Step 1 of a hypothesis test. Fix the test, the data selection and H₀/H₁ BEFORE looking at results. test_arguments are the same fields the test takes (e.g. t_test: {type, file, column, group_column, group1, group2, equal_variances, mu0}; anova: {file, column, group_column}; ab_test: {metric, file, variant_column, outcome_column, control, success_value, expected_split, segment_column}; chi_square: {type, file, row_column, col_column}; correlation: {file, x_column, y_column, method}). Only use columns the user asked about. The user confirms every column/group choice, the direction and α. Calling it again later revises the plan and restarts steps 2–6.`,
       inputSchema: {
         test: z.enum(testNames),
         test_arguments: z.record(z.string(), z.any()).describe('Fields for the chosen test (file, columns, groups, type, method, ...). Not alpha/alternative.'),
@@ -792,6 +865,16 @@ export function guidedTools({ create_visualization, build_report }) {
       run: skipStep,
     },
     { name: 'workflow_status', title: 'Workflow status', description: 'Shows the current analysis, which of the six steps are done, and the saved results (for the report).', inputSchema: {}, annotations: { title: 'Workflow status', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }, run: workflowStatus },
+    {
+      ...classic.ab_test_plan,
+      description: classic.ab_test_plan.description + ' Use in an exploration (planning a future test); a running hypothesis test sizes itself in step 4.',
+      run: async (a, { session }) => {
+        session.requireAnalysis();
+        const res = await IMPL.abTestPlan(a);
+        const r = session.addResult({ kind: 'ab_plan', title: 'A/B test sample size', data: res.data, summary: res.summary });
+        return { ...res, data: { ...res.data, result_id: r.id } };
+      },
+    },
     { ...classic.inspect_data_file, run: (a) => IMPL.inspectFile(a) },
     { ...classic.choose_test, run: (a) => IMPL.chooseTest(a) },
     {

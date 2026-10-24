@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.5.0
+
+**A/B testing and Tukey HSD.**
+
+- **Tukey HSD post-hoc for ANOVA.** Every one-way ANOVA with 3+ groups (in memory or streamed from a very large file) now includes Tukey's HSD (Tukey–Kramer for unequal sizes): adjusted p-values and simultaneous intervals for every pair, the significant pairs marked ★, the best group and whether it beats all others, and a compact letter display. Reports and summaries name the groups that differ. `post_hoc: "none"` turns it off. `choose_test` no longer suggests Bonferroni pairs by default.
+- **New `ab_test` tool** (also test `ab_test` in the six-step workflow) for A/B and A/B/n experiments, conversion or continuous metrics, from inline numbers or a file (`variant_column`, `outcome_column`, `success_value`):
+  - per-variant rates (Wilson) or means (t) with intervals;
+  - each variant vs the control: absolute and relative lift with intervals, two-proportion z-test (Fisher's exact when counts are small) or Welch's t-test, Cohen's h / d, Holm (default), Bonferroni or no adjustment;
+  - sample ratio mismatch check (chi-square against `expected_split`, threshold `srm_alpha` 0.001) that blocks the decision when it fails;
+  - omnibus chi-square or ANOVA (+ Tukey HSD) for 3+ variants;
+  - Bayesian probability to beat the control, probability of being best and expected loss (Beta-Binomial, deterministic quadrature);
+  - minimum detectable effect of the test as run, optional `mde` for practical significance, optional `segment_column` breakdown with a Simpson's-paradox warning, and a decision line;
+  - large files are streamed (segment breakdowns need a file that fits in memory).
+- **New `ab_test_plan` tool**: visitors per variant for a given baseline and minimum lift (absolute or relative), α split across variants, days from daily traffic, or the smallest lift a given sample can detect.
+- **Workflow.** Step 2 adds the sample ratio and randomisation checks for A/B tests; step 4 sizes power in lift terms; the report leads with the sample ratio check and the decision.
+- **Claim checks** now check a claim that names two groups or variants against that pair's own (adjusted) p-value, so "C significantly beats A" fails when only B does.
+- **Jev evaluation harness.** `npm run jev:eval` measures Jev on 45 labeled plan and conclusion cases (the exact packets the server sends, built from real results), reporting accuracy, false-approval and false-alarm rates, AUC, Brier score, latency and stability, alone and combined with Stats Explorer's own checks. `--dry-run` needs no key.
+- Verified against SciPy and statsmodels: `test/reference/abtest.py` and `test/abtest.test.mjs` (14 new tests; 130 in total).
+
 ## 1.4.0
 
 **Works with Jev.** Stats Explorer computes; Jev (TypeSafe's fast judgment model) independently checks the AI's choices and wording. Off unless `STATS_EXPLORER_JEV` is set; nothing changes otherwise.

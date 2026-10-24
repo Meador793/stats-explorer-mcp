@@ -5,7 +5,8 @@
 // the output is identical. Otherwise the same output is computed from the one-pass summaries:
 // counts, means, variances, sums of squares and cross-products are exact; medians, quartiles and the
 // Spearman correlation are estimated (and say so).
-import { IMPL, groupSummaryResult } from '../tools.js';
+import { IMPL, groupSummaryResult, postHocSentence } from '../tools.js';
+import { tukeyHSD, tukeyLines } from '../posthoc.js';
 import { accumulate } from './service.js';
 import { UserError } from '../errors.js';
 import {
@@ -206,6 +207,7 @@ function anovaSummary(a, groups) {
     }
   }
   const v = verdict(p, a.alpha, `equal means in all ${k} groups`, 'at least one group mean being different');
+  const postHoc = a.post_hoc !== 'none' && k >= 3 ? tukeyHSD(groups.map((g) => ({ name: g.name, n: g.S.n, mean: sMean(g.S) })), SSW / dfW, dfW, a.alpha) : null;
   return {
     data: {
       test: 'One-way ANOVA', alpha: a.alpha,
@@ -214,7 +216,8 @@ function anovaSummary(a, groups) {
       groups: groups.map((g) => ({ name: g.name, ...sSummarize(g.S, a.confidence) })),
       anova_table: { ss_between: SSB, ss_within: SSW, ms_between: SSB / dfB, ms_within: SSW / dfW, total_n: N },
       ...(pairwise && { pairwise_comparisons: { method: 'Welch t-tests, Bonferroni-adjusted', comparisons: pairwise } }),
-      interpretation: v.text + (v.significant && !a.pairwise ? ' Set pairwise: true to see which groups differ.' : ''),
+      ...(postHoc && { post_hoc: postHoc }),
+      interpretation: v.text + postHocSentence(postHoc),
       warnings,
     },
     summary: [
@@ -223,6 +226,7 @@ function anovaSummary(a, groups) {
       `Means: ${groups.map((g) => `${g.name} = ${fmt(sMean(g.S))}`).join(', ')}`,
       `η² = ${fmt(eta2, 3)} (${magnitude.eta2(eta2)}), ω² = ${fmt(omega2, 3)}`,
       ...(pairwise ? pairwise.map((c) => `  ${c.groups[0]} vs ${c.groups[1]}: diff ${fmt(c.mean_difference)}, Bonferroni p = ${fmt(c.p_bonferroni)}${c.significant ? ' *' : ''}`) : []),
+      ...tukeyLines(postHoc, v.significant),
       v.text,
     ],
   };

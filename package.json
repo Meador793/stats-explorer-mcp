@@ -1,8 +1,8 @@
 {
   "name": "stats-explorer-mcp",
-  "version": "1.4.0",
-  "description": "Verified statistics for AI agents with a guided workflow: hypothesis tests that follow six analyst steps, user-confirmed choices, charts and reports, optionally checked by Jev. CSV, TSV, Excel, Parquet of any size. Runs locally.",
-  "mcpName": "io.github.meador793/stats-explorer-mcp",
+  "version": "1.5.1",
+  "description": "Verified statistics for AI agents with a guided workflow: hypothesis tests that follow six analyst steps, A/B tests, Tukey post-hoc, user-confirmed choices, charts and reports, optionally checked by Jev. CSV, TSV, Excel, Parquet of any size. Runs locally.",
+  "mcpName": "io.github.Meador793/stats-explorer-mcp",
   "type": "module",
   "bin": {
     "stats-explorer-mcp": "src/index.js"
@@ -28,9 +28,12 @@
     "test": "node --test test/*.test.mjs",
     "sync-engine": "node scripts/sync-engine.mjs",
     "reference": "python3 test/reference/generate.py",
-    "inspect": "npx @modelcontextprotocol/inspector node src/index.js"
+    "inspect": "npx @modelcontextprotocol/inspector node src/index.js",
+    "reference:ab": "python3 test/reference/abtest.py",
+    "jev:eval": "node scripts/jev-eval.mjs"
   },
   "keywords": [
+    "ab-testing",
     "ai-agent",
     "anova",
     "chi-square",
@@ -38,6 +41,7 @@
     "data-analysis",
     "elicitation",
     "excel",
+    "experimentation",
     "hypothesis-testing",
     "jev",
     "mcp",
@@ -46,6 +50,7 @@
     "report",
     "statistics",
     "t-test",
+    "tukey",
     "typesafe",
     "verification",
     "visualization"

@@ -1,8 +1,8 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.meador793/stats-explorer-mcp",
+  "name": "io.github.Meador793/stats-explorer-mcp",
   "title": "Stats Explorer",
-  "description": "Verified statistics for AI agents: guided tests, confirmed choices, reports, optional Jev checks.",
+  "description": "Verified statistics for AI agents: guided tests, A/B tests, Tukey HSD, reports, optional Jev checks.",
   "websiteUrl": "https://github.com/meador793/stats-explorer-mcp#readme",
   "icons": [
     {
@@ -17,12 +17,12 @@
     "url": "https://github.com/meador793/stats-explorer-mcp",
     "source": "github"
   },
-  "version": "1.4.0",
+  "version": "1.5.1",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "stats-explorer-mcp",
-      "version": "1.4.0",
+      "version": "1.5.1",
       "transport": {
         "type": "stdio"
       },

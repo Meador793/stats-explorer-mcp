@@ -1,8 +1,8 @@
 {
   "name": "stats-explorer-mcp",
   "displayName": "Stats Explorer MCP: Verified Statistics for AI Agents",
-  "description": "Statistics and analytics tools for Copilot and Claude: t-tests, ANOVA, chi-square, correlation, group summaries and \"what drives X\", with effect sizes, confidence intervals and plain-English results. Any file size. Runs locally.",
-  "version": "1.4.0",
+  "description": "Statistics and analytics tools for Copilot and Claude: t-tests, ANOVA with Tukey HSD, A/B tests, chi-square, correlation, group summaries and \"what drives X\", with effect sizes, confidence intervals and plain-English results. Any file size. Runs locally.",
+  "version": "1.5.0",
   "publisher": "benmeador",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -28,7 +28,9 @@
     "data analysis",
     "csv",
     "jev",
-    "typesafe"
+    "typesafe",
+    "a/b testing",
+    "tukey"
   ],
   "repository": {
     "type": "git",
