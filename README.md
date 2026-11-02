@@ -2,6 +2,8 @@
 
 ![Stats Explorer MCP: verified statistics your AI assistant calls instead of guessing numbers](https://raw.githubusercontent.com/meador793/stats-explorer-mcp/main/docs/images/hero.png)
 
+[![Stats Explorer MCP server](https://mcprush.com/badge/stats-explorer-mcp/card.svg?theme=light)](https://mcprush.com/to/stats-explorer-mcp?ref=badge)
+
 An [MCP](https://modelcontextprotocol.io) server with **18 statistics and analytics tools an AI assistant can call instead of guessing numbers, on data files of any size:**
 
 * **Tests:** t-tests, z-tests, ANOVA (with a Tukey HSD post-hoc that names the groups that differ), ANCOVA, MANOVA, chi-square, Fisher's exact, binomial and correlation.
